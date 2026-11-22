@@ -236,9 +236,9 @@ class RichView(Renderer):
             row_label = 8 - row
             table.add_row(f"[bold]  {row_label} [/]", *cells)
 
-        # Labels das colunas invertidos quando é a vez das pretas
+        # Labels das colunas invertidos quando o tabuleiro está invertido
         col_labels_row = [" [bold]  [/]"]
-        col_labels = "hgfedcba" if is_black_turn else "abcdefgh"
+        col_labels = "hgfedcba" if should_invert else "abcdefgh"
         for label in col_labels:
             col_labels_row.append(f"[bold] {label}   [/]")
         table.add_row(*col_labels_row)
