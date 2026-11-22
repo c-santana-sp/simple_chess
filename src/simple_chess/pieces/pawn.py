@@ -30,5 +30,4 @@ class Pawn(Piece):
 			if board.in_bounds(diag) and board.has_enemy(diag, self.color):
 				moves.append(diag)
 
-		print(moves)
 		return moves
