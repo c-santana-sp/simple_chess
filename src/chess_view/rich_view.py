@@ -1,30 +1,35 @@
 """Implementação Rich — tabuleiro fixo no terminal (estilo htop)."""
 
+import json
+import pathlib
+
 from simple_chess.color import Color
 from simple_chess.game import Game
 from simple_chess.pieces.piece import Piece
 from simple_chess.position import Position
 
+from chess_view.defaults import DEFAULT_CONFIG, _build_piece_symbols, _deep_copy, _deep_merge
 from chess_view.renderer import Renderer
 
+# Caminho do arquivo de configuração, relativo ao projeto root
+_CONFIG_PATH = pathlib.Path(__file__).resolve().parents[2] / "config.json"
 
-# Mapeamento de peças para símbolos Unicode
-PIECE_SYMBOLS: dict[tuple[str, Color], str] = {
-    # Brancas (símbolos preenchidos)
-    ("King", Color.WHITE): "♚",
-    ("Queen", Color.WHITE): "♛",
-    ("Rook", Color.WHITE): "♜",
-    ("Bishop", Color.WHITE): "♝",
-    ("Knight", Color.WHITE): "♞",
-    ("Pawn", Color.WHITE): "♟",
-    # Pretas (símbolos não preenchidos)
-    ("King", Color.BLACK): "♔",
-    ("Queen", Color.BLACK): "♕",
-    ("Rook", Color.BLACK): "♖",
-    ("Bishop", Color.BLACK): "♗",
-    ("Knight", Color.BLACK): "♘",
-    ("Pawn", Color.BLACK): "♙",
-}
+
+def _load_config() -> dict:
+    """Carrega as configurações do arquivo config.json.
+
+    Retorna as configurações padrão se o arquivo não existir ou estiver inválido.
+    """
+    try:
+        if _CONFIG_PATH.exists():
+            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+                user_config = json.load(f)
+            # Mesclar recursivamente com defaults
+            config = _deep_merge(DEFAULT_CONFIG, user_config)
+            return config
+    except (json.JSONDecodeError, OSError):
+        pass
+    return _deep_copy(DEFAULT_CONFIG)
 
 
 class RichView(Renderer):
@@ -50,17 +55,108 @@ class RichView(Renderer):
     └─────────────────────────────────────────────────────────┘
     """
 
-    def __init__(self):
+    def __init__(self, config: dict | None = None):
+        """Inicializa a visualização Rich.
+
+        Args:
+            config: Dicionário de configurações. Se None, carrega do config.json.
+        """
+        self._config = config if config is not None else _load_config()
+        self._piece_symbols = _build_piece_symbols(self._config)
         self._current_input = ""
         self._status_message = ""
         self._selected: Position | None = None
         self._valid_moves: list[Position] | None = None
 
+    # --- Properties de configuração ---
+
+    @property
+    def invert_board_on_black_turn(self) -> bool:
+        """Se True, inverte o tabuleiro quando é a vez das pretas."""
+        return self._config.get("invert_board_on_black_turn", True)
+
+    @property
+    def cell_width(self) -> int:
+        """Largura em caracteres de cada célula do tabuleiro."""
+        return self._config.get("board", {}).get("cell_width", 4)
+
+    @property
+    def light_square_color(self) -> str:
+        return self._config.get("board", {}).get("light_square_color", "#3b5e3b")
+
+    @property
+    def dark_square_color(self) -> str:
+        return self._config.get("board", {}).get("dark_square_color", "#2d4a2d")
+
+    @property
+    def selected_square_color(self) -> str:
+        return self._config.get("board", {}).get("selected_square_color", "#b8860b")
+
+    @property
+    def selected_text_color(self) -> str:
+        return self._config.get("board", {}).get("selected_text_color", "black")
+
+    @property
+    def valid_move_color(self) -> str:
+        return self._config.get("board", {}).get("valid_move_color", "#3a7d44")
+
+    @property
+    def piece_text_color(self) -> str:
+        return self._config.get("board", {}).get("piece_text_color", "white")
+
+    @property
+    def piece_bold(self) -> bool:
+        return self._config.get("board", {}).get("piece_bold", True)
+
+    @property
+    def selected_marker(self) -> str:
+        return self._config.get("markers", {}).get("selected", "★")
+
+    @property
+    def valid_move_marker(self) -> str:
+        return self._config.get("markers", {}).get("valid_move", "·")
+
+    @property
+    def sidebar_width(self) -> int:
+        return self._config.get("sidebar", {}).get("width", 20)
+
+    @property
+    def sidebar_border_style(self) -> str:
+        return self._config.get("sidebar", {}).get("border_style", "dim")
+
+    @property
+    def captured_title_color(self) -> str:
+        return self._config.get("sidebar", {}).get("captured_title_color", "yellow")
+
+    @property
+    def history_title_color(self) -> str:
+        return self._config.get("sidebar", {}).get("history_title_color", "cyan")
+
+    @property
+    def prompt_color(self) -> str:
+        return self._config.get("command_line", {}).get("prompt_color", "dim white")
+
+    @property
+    def input_color(self) -> str:
+        return self._config.get("command_line", {}).get("input_color", "cyan")
+
+    @property
+    def cursor_char(self) -> str:
+        return self._config.get("command_line", {}).get("cursor", "█")
+
+    @property
+    def title_text(self) -> str:
+        return self._config.get("title", {}).get("text", "♔ Xadrez")
+
+    @property
+    def title_style(self) -> str:
+        return self._config.get("title", {}).get("style", "bold")
+
     def _piece_symbol(self, piece: Piece | None) -> str:
         if piece is None:
             return " "
         key = (type(piece).__name__, piece.color)
-        return PIECE_SYMBOLS.get(key, "?")
+        return self._piece_symbols.get(key, "?")
 
     def _build_table(
         self,
@@ -68,20 +164,40 @@ class RichView(Renderer):
         selected: Position | None = None,
         valid_moves: list[Position] | None = None,
     ) -> "Table":
-        """Constrói a tabela do tabuleiro 8x8."""
+        """Constrói a tabela do tabuleiro 8x8.
+
+        Inverte a visualização quando é a vez das pretas,
+        mostrando o tabuleiro do ponto de vista do jogador atual.
+        """
         from rich.table import Table
         from rich.text import Text as RichText
 
-        CELL_W = 4
+        cell_w = self.cell_width
         valid_set = set(valid_moves) if valid_moves else set()
         table = Table(show_header=False, show_edge=False, padding=(0, 1))
 
         for _col in range(8):
-            table.add_column(width=CELL_W, justify="center")
+            table.add_column(width=cell_w, justify="center")
 
-        for row in range(8):
+        # Inverter o tabuleiro quando é a vez das pretas (configurável)
+        is_black_turn = game.player_turn == Color.BLACK
+        should_invert = self.invert_board_on_black_turn and is_black_turn
+        row_order = range(7, -1, -1) if should_invert else range(8)
+        col_order = range(7, -1, -1) if should_invert else range(8)
+
+        selected_marker = self.selected_marker
+        valid_marker = self.valid_move_marker
+        light_color = self.light_square_color
+        dark_color = self.dark_square_color
+        selected_bg = self.selected_square_color
+        selected_fg = self.selected_text_color
+        valid_bg = self.valid_move_color
+        piece_color = self.piece_text_color
+        bold_prefix = "bold " if self.piece_bold else ""
+
+        for row in row_order:
             cells: list[RichText] = []
-            for col in range(8):
+            for col in col_order:
                 pos = Position(row, col)
                 piece = game.board.piece_at(pos)
                 symbol = self._piece_symbol(piece)
@@ -93,25 +209,28 @@ class RichView(Renderer):
                 has_piece = symbol.strip()
 
                 if is_selected:
-                    display_text = f" ★{symbol} " if has_piece else " ★  "
-                    style = "bold black on #b8860b"
+                    display_text = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
+                    style = f"{bold_prefix}{selected_fg} on {selected_bg}"
                 elif is_valid and has_piece:
-                    display_text = f" {symbol}· "
-                    style = "bold white on #3a7d44"
+                    display_text = f" {symbol}{valid_marker} "
+                    style = f"{bold_prefix}{piece_color} on {valid_bg}"
                 elif is_valid and not has_piece:
-                    display_text = "  ·  "
-                    style = "bold white on #3a7d44"
+                    display_text = f"  {valid_marker}  "
+                    style = f"{bold_prefix}{piece_color} on {valid_bg}"
                 else:
+                    bg = light_color if is_light else dark_color
                     display_text = f" {symbol} " if has_piece else "    "
-                    style = "bold white on #3b5e3b" if is_light else "bold white on #2d4a2d"
+                    style = f"{bold_prefix}{piece_color} on {bg}"
 
                 cells.append(RichText(display_text, style=style))
 
             row_label = 8 - row
             table.add_row(f"[bold]  {row_label} [/]", *cells)
 
+        # Labels das colunas invertidos quando é a vez das pretas
         col_labels_row = [" [bold]  [/]"]
-        for label in "abcdefgh":
+        col_labels = "hgfedcba" if is_black_turn else "abcdefgh"
+        for label in col_labels:
             col_labels_row.append(f"[bold] {label}   [/]")
         table.add_row(*col_labels_row)
 
@@ -126,7 +245,7 @@ class RichView(Renderer):
         lines: list[Text] = []
 
         # --- Peças capturadas ---
-        captured_title = Text("Capturadas:", style="bold yellow")
+        captured_title = Text("Capturadas:", style=f"bold {self.captured_title_color}")
         lines.append(captured_title)
 
         if game.captured_pieces:
@@ -149,7 +268,7 @@ class RichView(Renderer):
         lines.append(Text(""))
 
         # --- Histórico de jogadas ---
-        history_title = Text("Historico:", style="bold cyan")
+        history_title = Text("Historico:", style=f"bold {self.history_title_color}")
         lines.append(history_title)
 
         if game.move_history:
@@ -176,9 +295,9 @@ class RichView(Renderer):
         content = Group(*lines)
         return Panel(
             content,
-            border_style="dim",
+            border_style=self.sidebar_border_style,
             padding=(0, 1),
-            width=20,
+            width=self.sidebar_width,
             expand=False,
         )
 
@@ -190,15 +309,15 @@ class RichView(Renderer):
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
 
         cmd = Text()
-        cmd.append(": ", style="bold dim white")
+        cmd.append(": ", style=f"bold {self.prompt_color}")
 
         if self._current_input:
-            # Texto digitado em cyan
-            cmd.append(self._current_input, style="bold cyan")
-            # Cursor piscante (simulado com underscore)
-            cmd.append("█", style="bold cyan blink")
+            # Texto digitado com cor configurável
+            cmd.append(self._current_input, style=f"bold {self.input_color}")
+            # Cursor piscante (simulado)
+            cmd.append(self.cursor_char, style=f"bold {self.input_color} blink")
         else:
-            cmd.append(f"{turn_text}, digite sua jogada:", style="bold dim white")
+            cmd.append(f"{turn_text}, digite sua jogada:", style=f"bold {self.prompt_color}")
 
         return cmd
 
@@ -230,7 +349,7 @@ class RichView(Renderer):
         # Turno info
         turn_color = game.player_turn
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
-        title = Text(f"  ♔ Xadrez  |  Vez das: {turn_text}", style="bold", justify="center")
+        title = Text(f"  {self.title_text}  |  Vez das: {turn_text}", style=self.title_style, justify="center")
 
         # Status line
         if status_message:

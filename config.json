@@ -1,0 +1,46 @@
+{
+  "invert_board_on_black_turn": false,
+  "board": {
+    "cell_width": 4,
+    "light_square_color": "#3b5e3b",
+    "dark_square_color": "#2d4a2d",
+    "selected_square_color": "#b8860b",
+    "selected_text_color": "black",
+    "valid_move_color": "#3a7d44",
+    "piece_text_color": "white",
+    "piece_bold": true
+  },
+  "markers": {
+    "selected": "★",
+    "valid_move": "·"
+  },
+  "sidebar": {
+    "width": 20,
+    "border_style": "dim",
+    "captured_title_color": "yellow",
+    "history_title_color": "cyan"
+  },
+  "command_line": {
+    "prompt_color": "dim white",
+    "input_color": "cyan",
+    "cursor": "█"
+  },
+  "title": {
+    "text": "♔ Xadrez",
+    "style": "bold"
+  },
+  "piece_symbols": {
+    "King_WHITE": "♚",
+    "Queen_WHITE": "♛",
+    "Rook_WHITE": "♜",
+    "Bishop_WHITE": "♝",
+    "Knight_WHITE": "♞",
+    "Pawn_WHITE": "♟",
+    "King_BLACK": "♔",
+    "Queen_BLACK": "♕",
+    "Rook_BLACK": "♖",
+    "Bishop_BLACK": "♗",
+    "Knight_BLACK": "♘",
+    "Pawn_BLACK": "♙"
+  }
+}
