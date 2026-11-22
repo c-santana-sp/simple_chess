@@ -98,7 +98,13 @@ class RichView(Renderer):
 
     @property
     def valid_move_color(self) -> str:
-        return self._config.get("board", {}).get("valid_move_color", "#3a7d44")
+        """Cor de fundo para casas vazias onde a peça pode se mover (azul opaco)."""
+        return self._config.get("board", {}).get("valid_move_color", "#2a4a6b")
+
+    @property
+    def valid_capture_color(self) -> str:
+        """Cor de fundo para casas com peças inimigas que podem ser capturadas (vermelho opaco)."""
+        return self._config.get("board", {}).get("valid_capture_color", "#6b2a2a")
 
     @property
     def piece_text_color(self) -> str:
@@ -191,7 +197,8 @@ class RichView(Renderer):
         dark_color = self.dark_square_color
         selected_bg = self.selected_square_color
         selected_fg = self.selected_text_color
-        valid_bg = self.valid_move_color
+        valid_move_bg = self.valid_move_color
+        valid_capture_bg = self.valid_capture_color
         piece_color = self.piece_text_color
         bold_prefix = "bold " if self.piece_bold else ""
 
@@ -212,11 +219,13 @@ class RichView(Renderer):
                     display_text = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
                     style = f"{bold_prefix}{selected_fg} on {selected_bg}"
                 elif is_valid and has_piece:
+                    # Casa com peça inimiga — captura (vermelho opaco)
                     display_text = f" {symbol}{valid_marker} "
-                    style = f"{bold_prefix}{piece_color} on {valid_bg}"
+                    style = f"{bold_prefix}{piece_color} on {valid_capture_bg}"
                 elif is_valid and not has_piece:
+                    # Casa vazia — movimento (azul opaco)
                     display_text = f"  {valid_marker}  "
-                    style = f"{bold_prefix}{piece_color} on {valid_bg}"
+                    style = f"{bold_prefix}{piece_color} on {valid_move_bg}"
                 else:
                     bg = light_color if is_light else dark_color
                     display_text = f" {symbol} " if has_piece else "    "
