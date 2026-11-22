@@ -81,6 +81,11 @@ class RichView(Renderer):
         return self._config.get("board", {}).get("cell_width", 4)
 
     @property
+    def cell_height(self) -> int:
+        """Altura em linhas de cada célula do tabuleiro (1 = normal, 2 = dobro)."""
+        return self._config.get("board", {}).get("cell_height", 2)
+
+    @property
     def light_square_color(self) -> str:
         return self._config.get("board", {}).get("light_square_color", "#3b5e3b")
 
@@ -123,20 +128,8 @@ class RichView(Renderer):
         return self._config.get("markers", {}).get("valid_move", "·")
 
     @property
-    def sidebar_width(self) -> int:
-        return self._config.get("sidebar", {}).get("width", 20)
-
-    @property
-    def sidebar_border_style(self) -> str:
-        return self._config.get("sidebar", {}).get("border_style", "dim")
-
-    @property
     def captured_title_color(self) -> str:
-        return self._config.get("sidebar", {}).get("captured_title_color", "yellow")
-
-    @property
-    def history_title_color(self) -> str:
-        return self._config.get("sidebar", {}).get("history_title_color", "cyan")
+        return self._config.get("captured", {}).get("title_color", "yellow")
 
     @property
     def prompt_color(self) -> str:
@@ -174,13 +167,17 @@ class RichView(Renderer):
 
         Inverte a visualização quando é a vez das pretas,
         mostrando o tabuleiro do ponto de vista do jogador atual.
+
+        Cada célula ocupa `cell_height` linhas, com a peça centralizada
+        verticalmente, para que as casas fiquem mais quadradas.
         """
         from rich.table import Table
         from rich.text import Text as RichText
 
         cell_w = self.cell_width
+        cell_h = self.cell_height
         valid_set = set(valid_moves) if valid_moves else set()
-        table = Table(show_header=False, show_edge=False, padding=(0, 1))
+        table = Table(show_header=False, show_edge=False, box=None, padding=(0, 0))
 
         for _col in range(8):
             table.add_column(width=cell_w, justify="center")
@@ -215,23 +212,41 @@ class RichView(Renderer):
 
                 has_piece = symbol.strip()
 
+                # Determinar estilo e texto da célula
                 if is_selected:
-                    display_text = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
+                    piece_line = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
                     style = f"{bold_prefix}{selected_fg} on {selected_bg}"
                 elif is_valid and has_piece:
                     # Casa com peça inimiga — captura (vermelho opaco)
-                    display_text = f" {symbol}{valid_marker} "
+                    piece_line = f" {symbol}{valid_marker} "
                     style = f"{bold_prefix}{piece_color} on {valid_capture_bg}"
                 elif is_valid and not has_piece:
                     # Casa vazia — movimento (azul opaco)
-                    display_text = f"  {valid_marker}  "
+                    piece_line = f"  {valid_marker}  "
                     style = f"{bold_prefix}{piece_color} on {valid_move_bg}"
                 else:
                     bg = light_color if is_light else dark_color
-                    display_text = f" {symbol} " if has_piece else "    "
+                    piece_line = f" {symbol} " if has_piece else "    "
                     style = f"{bold_prefix}{piece_color} on {bg}"
 
-                cells.append(RichText(display_text, style=style))
+                # Se cell_height > 1, centralizar a peça verticalmente
+                if cell_h > 1:
+                    # Calcular onde colocar a peça (centralizada verticalmente)
+                    empty_line = " " * len(piece_line)
+                    lines_above = (cell_h - 1) // 2
+                    lines_below = cell_h - 1 - lines_above
+
+                    full_text = RichText(style=style)
+                    for _ in range(lines_above):
+                        full_text.append(empty_line)
+                        full_text.append("\n")
+                    full_text.append(piece_line)
+                    for _ in range(lines_below):
+                        full_text.append("\n")
+                        full_text.append(empty_line)
+                    cells.append(full_text)
+                else:
+                    cells.append(RichText(piece_line, style=style))
 
             row_label = 8 - row
             table.add_row(f"[bold]  {row_label} [/]", *cells)
@@ -245,69 +260,94 @@ class RichView(Renderer):
 
         return table
 
-    def _build_sidebar(self, game: Game) -> "Panel":
-        """Constrói o painel lateral com peças capturadas e histórico."""
-        from rich.panel import Panel
-        from rich.text import Text
-        from rich.console import Group
+    def _build_captured_text(self, game: Game) -> "Text":
+        """Constrói o texto das peças capturadas em formato horizontal.
 
-        lines: list[Text] = []
+        Semelhante ao histórico: quando vazio, exibe um texto padrão em dim.
+        Quando há peças, exibe os símbolos separados por espaço.
 
-        # --- Peças capturadas ---
-        captured_title = Text("Capturadas:", style=f"bold {self.captured_title_color}")
-        lines.append(captured_title)
+        Returns:
+            RichText com as peças capturadas formatadas horizontalmente.
+        """
+        from rich.text import Text as RichText
 
         if game.captured_pieces:
-            # Separar por cor
-            white_captured = [p for p in game.captured_pieces if p.color == Color.WHITE]
-            black_captured = [p for p in game.captured_pieces if p.color == Color.BLACK]
-
-            if white_captured:
-                symbols = " ".join(self._piece_symbol(p) for p in white_captured)
-                line = Text(f"  Brancas: {symbols}", style="white")
-                lines.append(line)
-            if black_captured:
-                symbols = " ".join(self._piece_symbol(p) for p in black_captured)
-                line = Text(f"  Pretas:  {symbols}", style="white")
-                lines.append(line)
+            symbols = " ".join(self._piece_symbol(p) for p in game.captured_pieces)
+            content = RichText(symbols, style="white")
         else:
-            lines.append(Text("  (nenhuma)", style="dim"))
+            content = RichText("(nenhuma)", style="dim")
 
-        # Separador
-        lines.append(Text(""))
+        return content
 
-        # --- Histórico de jogadas ---
-        history_title = Text("Historico:", style=f"bold {self.history_title_color}")
-        lines.append(history_title)
+    def _build_captured_bar(self, game: Game) -> "Panel":
+        """Constrói o painel de peças capturadas.
 
-        if game.move_history:
-            # Emparelhar jogadas: branca + preta
-            moves = game.move_history
+        Returns:
+            Panel com as peças capturadas em formato horizontal.
+        """
+        from rich.panel import Panel
+        from rich.text import Text as RichText
+
+        captured_text = self._build_captured_text(game)
+        title = RichText("Capturadas", style=f"bold {self.captured_title_color}")
+        return Panel(
+            captured_text,
+            title=title,
+            border_style="dim",
+            padding=(0, 1),
+            expand=True,
+        )
+
+    def _build_history_bar(self, game: Game) -> "Panel":
+        """Constrói o painel de histórico de jogadas.
+
+        Escreve na horizontal e quebra linha ao atingir a largura do terminal.
+        Mantém no máximo 3 linhas, com "..." se truncado.
+
+        Returns:
+            Panel com as jogadas em fluxo horizontal.
+        """
+        from rich.panel import Panel
+        from rich.text import Text as RichText
+
+        moves = game.move_history
+        if not moves:
+            history_text = RichText("(sem jogadas)", style="dim")
+        else:
+            # Construir tokens: "1.e4", "e5", "2.d4", "d5", ...
+            tokens: list[str] = []
             for i in range(0, len(moves), 2):
                 move_num = i // 2 + 1
                 white_move = moves[i]
                 black_move = moves[i + 1] if i + 1 < len(moves) else ""
+                tokens.append(f"{move_num}.{white_move}")
                 if black_move:
-                    line = Text(
-                        f"  {move_num}. {white_move:<6} {black_move}",
-                        style="dim white",
-                    )
-                else:
-                    line = Text(
-                        f"  {move_num}. {white_move}",
-                        style="dim white",
-                    )
-                lines.append(line)
-        else:
-            lines.append(Text("  (sem jogadas)", style="dim"))
+                    tokens.append(black_move)
 
-        content = Group(*lines)
+            # Limitar tokens para no máximo 3 linhas
+            max_lines = 3
+            chars_per_line = 116  # largura do terminal menos bordas
+            tokens_per_line = chars_per_line // 6  # ~6 chars por token
+            max_tokens = max_lines * tokens_per_line
+
+            if len(tokens) > max_tokens:
+                tokens = tokens[-max_tokens:]
+
+            history_text = RichText()
+            if len(tokens) > max_tokens:
+                history_text.append("... ", style="dim")
+            for idx, token in enumerate(tokens):
+                if idx > 0 or (len(tokens) > max_tokens):
+                    history_text.append(" ")
+                history_text.append(token, style="dim white")
+
+        history_title = RichText("Histórico", style="bold blue")
         return Panel(
-            content,
-            border_style=self.sidebar_border_style,
+            history_text,
+            title=history_title,
+            border_style="dim",
             padding=(0, 1),
-            width=self.sidebar_width,
-            expand=False,
+            expand=True,
         )
 
     def _build_command_line(self, game: Game) -> "Text":
@@ -337,28 +377,24 @@ class RichView(Renderer):
         valid_moves: list[Position] | None = None,
         status_message: str = "",
     ) -> "Group":
-        """Constrói o layout completo: tabuleiro + sidebar + command line."""
         from rich.console import Group
         from rich.panel import Panel
         from rich.text import Text
 
-        # Tabuleiro — usar a tabela diretamente sem Panel para evitar corte
+        # Tabuleiro — centralizado sem borda
+        from rich.align import Align
         board_table = self._build_table(game, selected, valid_moves)
-
-        # Sidebar
-        sidebar = self._build_sidebar(game)
-
-        # Montar linha principal: tabuleiro + sidebar
-        from rich.columns import Columns
-        main_row = Columns(
-            [board_table, sidebar],
-            equal=False,
-        )
+        centered_board = Align(board_table, align="center")
 
         # Turno info
         turn_color = game.player_turn
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
         title = Text(f"  {self.title_text}  |  Vez das: {turn_text}", style=self.title_style, justify="center")
+
+        # Painéis separados: capturadas + histórico (empilhados verticalmente)
+        captured_bar = self._build_captured_bar(game)
+        history_bar = self._build_history_bar(game)
+        info_row = Group(captured_bar, history_bar)
 
         # Status line
         if status_message:
@@ -367,7 +403,7 @@ class RichView(Renderer):
             )
         else:
             status_text = Text(
-                "  Notacao: e4, Cf3, Nf3, e2-e4  |  'sair' para encerrar  ",
+                "  Notação: e4, Cf3, Nf3, e2-e4  |  'sair' para encerrar  ",
                 style="dim",
                 justify="center",
             )
@@ -375,7 +411,17 @@ class RichView(Renderer):
         # Command line
         cmd_line = self._build_command_line(game)
 
-        return Group(title, main_row, status_text, cmd_line)
+        # Rodapé: status + command line
+        bottom_section = Panel(
+            Group(status_text, cmd_line),
+            border_style="dim",
+            padding=(0, 1),
+            expand=True,
+        )
+
+        # Linha vazia como margem entre tabuleiro e painéis
+        gap = Text("")
+        return Group(title, centered_board, gap, info_row, bottom_section)
 
     def render(
         self,

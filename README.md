@@ -121,6 +121,8 @@ O jogo abre diretamente no terminal, com o tabuleiro visível e aguardando seu p
 | **Notação completa** | `e2e4` | Origem + destino sem separador |
 | **Selecionar peça** | `e2` | Destaca as jogadas válidas no tabuleiro |
 
+> **Dica de aprendizado:** Jogar com notação algébrica é uma ótima forma de se familiarizar com a linguagem universal do xadrez. À medida que você joga, começa a ler e pensar em termos de `e4`, `Cf3`, `Bc4` — exatamente como partidas reais são anotadas e discutidas.
+
 ### Destaque visual
 
 - **Azul opaco** (`·`) — casa vazia onde a peça pode se mover.

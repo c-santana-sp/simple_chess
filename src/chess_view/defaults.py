@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     "invert_board_on_black_turn": True,
     "board": {
         "cell_width": 4,
+        "cell_height": 2,
         "light_square_color": "#3b5e3b",
         "dark_square_color": "#2d4a2d",
         "selected_square_color": "#b8860b",
@@ -21,11 +22,8 @@ DEFAULT_CONFIG = {
         "selected": "★",
         "valid_move": "·",
     },
-    "sidebar": {
-        "width": 20,
-        "border_style": "dim",
-        "captured_title_color": "yellow",
-        "history_title_color": "cyan",
+    "captured": {
+        "title_color": "yellow",
     },
     "command_line": {
         "prompt_color": "dim white",

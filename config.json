@@ -14,11 +14,8 @@
     "selected": "★",
     "valid_move": "·"
   },
-  "sidebar": {
-    "width": 20,
-    "border_style": "dim",
-    "captured_title_color": "yellow",
-    "history_title_color": "cyan"
+  "captured": {
+    "title_color": "yellow"
   },
   "command_line": {
     "prompt_color": "dim white",
