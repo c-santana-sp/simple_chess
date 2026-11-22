@@ -189,4 +189,11 @@ Para adicionar uma nova visualização (ex: Pygame, terminal puro), basta criar 
 
 ---
 
+## Créditos
+
+- **Engine do jogo** (`simple_chess/`) — desenvolvida manualmente, incluindo lógica de tabuleiro, peças, turnos e parser de notação algébrica.
+- **Interface visual** (`chess_view/`) — desenvolvida com auxílio de IA (Junie, pela JetBrains), incluindo renderização com Rich, layout do terminal, input interativo e configurações visuais.
+
+---
+
 > **Nota:** Apenas o peão (Pawn) tem lógica de movimento implementada no momento. As outras peças estão como desafio para implementar.
