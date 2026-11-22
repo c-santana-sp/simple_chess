@@ -4,10 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "rich>=15.0.0",
+]
 
 [project.scripts]
-simple_chess = "simple_chess:main"
+chess_view = "chess_view.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
