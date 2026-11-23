@@ -25,9 +25,23 @@ class Pawn(Piece):
 			if pos.row == start_row and board.is_empty(two_steps):
 				moves.append(two_steps)
 
+		# Capturas diagonais normais
 		for d_col in (-1, 1):
 			diag = Position(pos.row + direction, pos.col + d_col)
 			if board.in_bounds(diag) and board.has_enemy(diag, self.color):
 				moves.append(diag)
+
+		# En passant — captura ao passar
+		if board.last_double_pawn_move is not None:
+			enemy_pos = board.last_double_pawn_move
+			enemy_piece = board.piece_at(enemy_pos)
+			if enemy_piece is not None and enemy_piece.color != self.color:
+				# O peão inimigo avançou 2 casas; verificar se posso capturá-lo
+				# A captura é na casa adjacente ao peão inimigo, na mesma fileira do peão atual
+				for d_col in (-1, 1):
+					if pos.col + d_col == enemy_pos.col:
+						en_passant_capture = Position(pos.row + direction, pos.col + d_col)
+						if board.in_bounds(en_passant_capture):
+							moves.append(en_passant_capture)
 
 		return moves
