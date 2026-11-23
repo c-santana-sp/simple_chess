@@ -419,9 +419,10 @@ class RichView(Renderer):
         # Movimentos
         ref_table.add_row("e4", "Peão avança")
         ref_table.add_row("Nf3", "Peça para casa")
+        ref_table.add_row("Ndf3", "Desambiguação")
         ref_table.add_row("exd5", "Captura")
-        ref_table.add_row("e4+", "Xeque")
-        ref_table.add_row("e4#", "Xeque-mate")
+        ref_table.add_row("e4+", "Xeque (obrig.)")
+        ref_table.add_row("e4#", "Xeque-mate (obrig.)")
         ref_table.add_row("")
 
         # Movimentos especiais

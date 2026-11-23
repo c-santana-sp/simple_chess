@@ -243,41 +243,102 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
     Detecta erros comuns:
     - Esqueceu o 'x' na captura
     - Esqueceu o '+' no xeque
+    - Desambiguação necessária
     - Notação inválida
     """
-    from simple_chess.move_parser import parse_move_notation
+    from simple_chess.move_parser import parse_move_notation, _find_moving_piece, PIECE_LETTER_MAP, parse_position
     from simple_chess.position import Position
+    from simple_chess.color import Color
 
     notation_lower = notation.lower()
 
-    # Tentar parsear sem sufixo para ver se o movimento em si é válido
+    # Tentar parsear para ver se o movimento em si é válido
     result = parse_move_notation(notation_lower, game)
     if result is None:
-        # Notação não reconhecida — verificar se é captura sem 'x'
-        # Ex: "e4" quando deveria ser "exd5"
+        # Notação não reconhecida — verificar erros comuns
+
+        # Verificar se é notação de peça sem desambiguação
+        # Ex: "Nf3" quando dois cavalos podem ir para f3
         import re
+        piece_match = re.match(r"^([kqrnb])([a-h][1-8])$", notation_lower)
+        if piece_match:
+            piece_letter = piece_match.group(1)
+            target_str = piece_match.group(2)
+            target = parse_position(target_str)
+            if target is not None:
+                piece_class_name = PIECE_LETTER_MAP.get(piece_letter)
+                if piece_class_name is not None:
+                    # Contar quantas peças podem ir para o destino
+                    candidates = []
+                    for row in range(8):
+                        for col in range(8):
+                            pos = Position(row, col)
+                            piece = game.board.piece_at(pos)
+                            if piece is None or piece.color != game.player_turn:
+                                continue
+                            if type(piece).__name__ != piece_class_name:
+                                continue
+                            moves = piece.valid_moves(pos, game.board)
+                            if moves is not None and target in moves:
+                                candidates.append(pos)
+                    if len(candidates) > 1:
+                        # Múltiplos candidatos — desambiguação necessária
+                        cols = [chr(ord("a") + c.col) for c in candidates]
+                        if len(set(cols)) == len(cols):
+                            # Colunas diferentes — usar coluna
+                            hints = [f"{piece_letter.upper()}{cols[i]}{target_str}" for i in range(len(candidates))]
+                            return f"Desambiguação! Use: {', '.join(hints)}"
+                        else:
+                            # Mesma coluna — usar fileira
+                            ranks = [str(8 - c.row) for c in candidates]
+                            hints = [f"{piece_letter.upper()}{ranks[i]}{target_str}" for i in range(len(candidates))]
+                            return f"Desambiguação! Use: {', '.join(hints)}"
+
+                # Verificar se é captura sem 'x'
+                piece_at_target = game.board.piece_at(target)
+                if piece_at_target is not None:
+                    return f"Captura! Use 'x': {piece_letter.upper()}x{target_str}"
+
+        # Verificar se é notação de peça com captura sem desambiguação
+        piece_capture_match = re.match(r"^([kqrnb])x([a-h][1-8])$", notation_lower)
+        if piece_capture_match:
+            piece_letter = piece_capture_match.group(1)
+            target_str = piece_capture_match.group(2)
+            target = parse_position(target_str)
+            if target is not None:
+                piece_class_name = PIECE_LETTER_MAP.get(piece_letter)
+                if piece_class_name is not None:
+                    candidates = []
+                    for row in range(8):
+                        for col in range(8):
+                            pos = Position(row, col)
+                            piece = game.board.piece_at(pos)
+                            if piece is None or piece.color != game.player_turn:
+                                continue
+                            if type(piece).__name__ != piece_class_name:
+                                continue
+                            moves = piece.valid_moves(pos, game.board)
+                            if moves is not None and target in moves:
+                                candidates.append(pos)
+                    if len(candidates) > 1:
+                        cols = [chr(ord("a") + c.col) for c in candidates]
+                        if len(set(cols)) == len(cols):
+                            hints = [f"{piece_letter.upper()}{cols[i]}x{target_str}" for i in range(len(candidates))]
+                            return f"Desambiguação! Use: {', '.join(hints)}"
+                        else:
+                            ranks = [str(8 - c.row) for c in candidates]
+                            hints = [f"{piece_letter.upper()}{ranks[i]}x{target_str}" for i in range(len(candidates))]
+                            return f"Desambiguação! Use: {', '.join(hints)}"
+
         # Verificar se é notação de peão
         pawn_match = re.match(r"^([a-h])([1-8])$", notation_lower)
         if pawn_match:
             target_str = pawn_match.group(0)
-            from simple_chess.move_parser import parse_position
             target = parse_position(target_str)
             if target is not None:
                 piece = game.board.piece_at(target)
                 if piece is not None:
                     return f"Captura! Use 'x': {notation_lower[0]}x{notation_lower[1:]}"
-
-        # Verificar se é notação de peça
-        piece_match = re.match(r"^([kqrnb])([a-h][1-8])$", notation_lower)
-        if piece_match:
-            piece_letter = piece_match.group(1)
-            target_str = piece_match.group(2)
-            from simple_chess.move_parser import parse_position
-            target = parse_position(target_str)
-            if target is not None:
-                piece = game.board.piece_at(target)
-                if piece is not None:
-                    return f"Captura! Use 'x': {piece_letter.upper()}x{target_str}"
 
         return f"'{notation}' não é uma jogada válida. Consulte a notação abaixo."
 
@@ -285,7 +346,6 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
     origin, end, user_suffix = result
 
     # Simular o movimento para ver se dá xeque
-    from simple_chess.color import Color
     enemy_color = Color.BLACK if game.player_turn == Color.WHITE else Color.WHITE
 
     original_grid = game.board.grid
@@ -297,7 +357,6 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
     game.board.grid = original_grid
 
     if gives_check and user_suffix not in ("+", "#"):
-        # Reconstruir a notação com capitalização correta
         clean_notation = notation[0].upper() + notation[1:] if notation else notation
         return f"Xeque! Adicione '+' no final: {clean_notation}+"
 
