@@ -436,15 +436,17 @@ class Game:
 				piece = piece_class(my_color)
 		self.board.place(end, piece)
 
-		# Verifica se dá xeque no oponente
+		# Verifica se dá xeque no oponente (no grid simulado!)
 		gives_check = self.board.is_check(enemy_color)
 
 		# Verifica se dá xeque-mate (xeque + sem movimentos legais)
+		# IMPORTANTE: fazer ANTES de restaurar o grid, pois __is_checkmate
+		# precisa do grid simulado para verificar se o oponente tem movimentos
 		gives_checkmate = False
 		if gives_check:
 			gives_checkmate = self.__is_checkmate(enemy_color)
 
-		# Restaura o grid original
+		# Restaura o grid original (após todas as verificações)
 		self.board.grid = original_grid
 
 		# Valida o sufixo
