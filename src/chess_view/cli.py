@@ -93,8 +93,9 @@ def _setup_raw_mode() -> tuple[int, list]:
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     new = termios.tcgetattr(fd)
-    # Desativar ICANON (cooked mode), ECHO e ISIG (para não travar em SIGTSTP/SIGINT)
-    new[3] = new[3] & ~termios.ICANON & ~termios.ECHO & ~termios.ISIG
+    # Desativar ICANON (cooked mode) e ECHO
+    # Manter ISIG para que Ctrl+C gere SIGINT e o jogo possa ser encerrado
+    new[3] = new[3] & ~termios.ICANON & ~termios.ECHO
     # Desativar IEXTEN para evitar comportamento estranho com teclas especiais
     new[3] = new[3] & ~termios.IEXTEN
     termios.tcsetattr(fd, termios.TCSANOW, new)
@@ -192,8 +193,11 @@ def main() -> None:
     old_sigcont = signal.signal(signal.SIGCONT, _sigcont_handler)
     old_sigwinch = signal.signal(signal.SIGWINCH, _sigwinch_handler)
 
+    # Flag para sair do loop principal
+    should_exit = False
+
     try:
-        while True:
+        while not should_exit:
             # Detectar terminal travado e tentar recuperar
             if stuck_counter > MAX_STUCK_ITERATIONS:
                 _reset_terminal_state(fd)
@@ -219,6 +223,7 @@ def main() -> None:
                     raw = cmd.lower()
 
                     if raw in ("sair", "quit", "exit"):
+                        should_exit = True
                         break
 
                     # Comando de ajuda: "help" ou "h" — ativa o painel de ajuda
@@ -272,6 +277,7 @@ def main() -> None:
                                 view.render(game, selected, valid_moves, result or "")
                                 # Aguardar brevemente para o jogador ver o resultado
                                 time.sleep(1.5)
+                                should_exit = True
                                 break
 
                             view.render(game, selected, valid_moves, "")
