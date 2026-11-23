@@ -24,6 +24,7 @@ então o texto digitado é visível na linha de comando.
 import fcntl
 import os
 import select
+import signal
 import sys
 import termios
 import time
@@ -34,6 +35,27 @@ from simple_chess.game import Game
 from simple_chess.position import Position
 
 from chess_view.rich_view import RichView
+
+
+# Flag global para detectar quando o terminal volta do background
+_terminal_resumed = True
+
+
+def _sigcont_handler(signum: int, frame) -> None:
+    """Handler para SIGCONT — quando o processo volta do background.
+
+    O terminal pode estar em estado inconsistente após ser suspenso.
+    """
+    global _terminal_resumed
+    _terminal_resumed = True
+
+
+def _sigwinch_handler(signum: int, frame) -> None:
+    """Handler para SIGWINCH — quando o terminal é redimensionado.
+
+    O rich.Live precisa ser notificado para ajustar o layout.
+    """
+    pass  # O rich.Live já trata redimensionamento internamente
 
 
 def parse_algebraic(notation: str) -> Position | None:
@@ -71,8 +93,10 @@ def _setup_raw_mode() -> tuple[int, list]:
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     new = termios.tcgetattr(fd)
-    # Desativar ICANON (cooked mode) e ECHO
-    new[3] = new[3] & ~termios.ICANON & ~termios.ECHO
+    # Desativar ICANON (cooked mode), ECHO e ISIG (para não travar em SIGTSTP/SIGINT)
+    new[3] = new[3] & ~termios.ICANON & ~termios.ECHO & ~termios.ISIG
+    # Desativar IEXTEN para evitar comportamento estranho com teclas especiais
+    new[3] = new[3] & ~termios.IEXTEN
     termios.tcsetattr(fd, termios.TCSANOW, new)
     # Set non-blocking
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -82,13 +106,32 @@ def _setup_raw_mode() -> tuple[int, list]:
 
 def _restore_terminal(fd: int, old_settings: list) -> None:
     """Restaura o terminal ao estado original."""
-    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+    try:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except termios.error:
+        pass  # Terminal já foi restaurado
+    try:
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+    except (OSError, IOError):
+        pass  # FD já fechado
+
+
+def _reset_terminal_state(fd: int) -> None:
+    """Reseta o estado do terminal para evitar travamento quando perde foco.
+
+    O rich.Live com screen=True pode deixar o terminal em estado inconsistente
+    quando a janela perde foco. Esta função tenta restaurar o estado.
+    """
+    try:
+        # Limpar buffer de input
+        termios.tcflush(fd, termios.TCIFLUSH)
+    except termios.error:
+        pass
 
 
 def _read_key_nonblocking(fd: int) -> str | None:
-    """Tenta ler uma tecla sem bloquear usando select + sys.stdin.read.
+    """Tenta ler uma tecla sem bloquear usando select + os.read.
 
     Args:
         fd: File descriptor do stdin em modo raw.
@@ -102,7 +145,9 @@ def _read_key_nonblocking(fd: int) -> str | None:
             data = os.read(fd, 64).decode("utf-8", errors="replace")
             if data:
                 return data
-    except (OSError, ValueError, UnicodeDecodeError):
+    except (OSError, ValueError, UnicodeDecodeError, select.error):
+        # select.error pode ocorrer quando o terminal perde foco
+        # ou entra em estado inconsistente
         pass
     return None
 
@@ -127,22 +172,39 @@ def main() -> None:
     # Configurar terminal em modo raw
     fd, old_settings = _setup_raw_mode()
 
-    # Iniciar Live display
+    # Iniciar Live display — sem screen=True para evitar conflito com termios
+    # O screen=True usa alternate screen buffer que conflita com o raw mode
+    # quando o terminal perde foco (GNOME Terminal, etc.)
     live = Live(
         view.get_renderable(game),
         console=console,
         refresh_per_second=10,
-        screen=True,
+        screen=False,
         transient=False,
     )
     live.start()
 
+    # Contador para detectar terminal travado (sem input por muito tempo)
+    stuck_counter = 0
+    MAX_STUCK_ITERATIONS = 500  # ~50 segundos sem input → resetar terminal
+
+    # Registrar handlers de sinal para evitar travamento
+    old_sigcont = signal.signal(signal.SIGCONT, _sigcont_handler)
+    old_sigwinch = signal.signal(signal.SIGWINCH, _sigwinch_handler)
+
     try:
         while True:
+            # Detectar terminal travado e tentar recuperar
+            if stuck_counter > MAX_STUCK_ITERATIONS:
+                _reset_terminal_state(fd)
+                stuck_counter = 0
+
             # Tentar ler tecla sem bloquear
             key = _read_key_nonblocking(fd)
 
             if key is not None:
+                # Resetar contador de terminal travado quando há input
+                stuck_counter = 0
                 # Processar cada caractere individualmente
                 # os.read() pode retornar múltiplos caracteres de uma vez
                 for ch in key:
@@ -234,6 +296,9 @@ def main() -> None:
                     )
                     break
 
+            # Incrementar contador de iterações sem input
+            stuck_counter += 1
+
             # Atualizar display a cada iteracao
             try:
                 live.update(view.get_renderable(game))
@@ -249,6 +314,13 @@ def main() -> None:
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
+        # Restaurar handlers de sinal
+        try:
+            signal.signal(signal.SIGCONT, old_sigcont)
+            signal.signal(signal.SIGWINCH, old_sigwinch)
+        except (OSError, ValueError):
+            pass
+
         try:
             live.stop()
         except Exception:
