@@ -3,6 +3,8 @@
 
 Engine de xadrez em Python com interface visual interativa no terminal. Todas as regras oficiais do xadrez estão implementadas.
 
+> **Objetivo:** Este projeto foi criado como ferramenta de aprendizado para quem deseja praticar e se familiarizar com a **notação algébrica padrão (PGN)** do xadrez. Ao jogar, você é obrigado a usar a notação correta — como `e4`, `Nf3`, `exd5`, `O-O` — o que ajuda a desenvolver a habilidade de ler e documentar partidas.
+
 O tabuleiro fica fixo na tela (estilo `htop`), sem rolagem, com peças Unicode coloridas, histórico de jogadas e destaque das casas válidas.
 
 ---
