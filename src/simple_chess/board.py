@@ -12,6 +12,8 @@ from simple_chess.position import Position
 class Board:
 	def __init__(self):
 		self.grid: list[list[Piece | None]] = [[None for _ in range(8)] for _ in range(8)]
+		# En passant — posição do peão que avançou 2 casas no turno anterior
+		self.last_double_pawn_move: Position | None = None
 
 	def in_bounds(self, pos: Position) -> bool:
 		return 0 <= pos.row < 8 and 0 <= pos.col < 8
@@ -75,3 +77,42 @@ class Board:
 	def has_enemy(self, pos: Position, player_color: Color) -> bool:
 		piece = self.piece_at(pos)
 		return piece is not None and piece.color != player_color
+
+	def find_king(self, color: Color) -> Position | None:
+		"""Localiza o rei da cor especificada no grid.
+
+		Returns:
+			Position do rei ou None se não encontrado.
+		"""
+		for row in range(8):
+			for col in range(8):
+				piece = self.grid[row][col]
+				if piece is not None and isinstance(piece, King) and piece.color == color:
+					return Position(row, col)
+		return None
+
+	def is_check(self, color: Color) -> bool:
+		"""Verifica se o rei da cor está em xeque.
+
+		Puramente geométrico: varre todas as peças inimigas e verifica
+		se alguma pode atacar a posição do rei usando valid_moves().
+
+		Returns:
+			True se o rei está sendo atacado, False caso contrário.
+		"""
+		king_pos = self.find_king(color)
+		if king_pos is None:
+			return False
+
+		# Cor inimiga
+		enemy_color = Color.BLACK if color == Color.WHITE else Color.WHITE
+
+		# Varre todas as peças inimigas
+		for row in range(8):
+			for col in range(8):
+				piece = self.grid[row][col]
+				if piece is not None and piece.color == enemy_color:
+					moves = piece.valid_moves(Position(row, col), self)
+					if king_pos in moves:
+						return True
+		return False
