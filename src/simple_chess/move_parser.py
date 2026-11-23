@@ -1,19 +1,20 @@
-"""Parser de notação algébrica para movimentos de xadrez.
+"""Parser de notação algébrica padrão internacional (PGN).
 
-Suporta:
+Suporta apenas a notação oficial usada em torneios:
 - Notação curta de peão: "e4", "d5" (peão avança para a casa indicada)
-- Notação curta de peças: "Cf3", "Nf3" (Cavalo para f3), "Bc4" (Bispo para c4),
+- Notação curta de peças: "Nf3" (Cavalo para f3), "Bc4" (Bispo para c4),
   "Qh5" (Rainha para h5), "Rh1" (Torre para h1), "Ke2" (Rei para e2)
-- Capturas: "exd5", "Cxf3", "Nxe5"
-- Notação longa: "e2-e4", "g1-f3"
-- Notação completa: "e2e4", "g1f3"
+- Capturas: "exd5" (peão em e captura em d5), "Nxf3" (Cavalo captura em f3)
+- Roque: "O-O" (curto), "O-O-O" (longo)
+- Promoção: "e8=Q" (peão promove para Rainha)
+- Sufixos informativos: "+" (xeque), "#" (xeque-mate)
 
-A letra da peça é opcional para peões. Para outras peças:
-- K/Rei = King
-- Q/D = Queen (D de Dama em português)
-- R/T = Rook (T de Torre em português)
-- B/B = Bishop (B de Bispo)
-- N/C = Knight (C de Cavalo em português, N do inglês)
+Letras de peça (padrão internacional):
+- K = King (Rei)
+- Q = Queen (Rainha)
+- R = Rook (Torre)
+- B = Bishop (Bispo)
+- N = Knight (Cavalo)
 """
 
 import re
@@ -28,18 +29,13 @@ if TYPE_CHECKING:
     from simple_chess.game import Game
 
 
-# Mapeamento de letras de peça (inglês + português)
+# Mapeamento de letras de peça (padrão internacional PGN)
 PIECE_LETTER_MAP: dict[str, str] = {
-    # King
-    "k": "King", "K": "King",
-    # Queen (D = Dama em português)
-    "q": "Queen", "Q": "Queen", "d": "Queen", "D": "Queen",
-    # Rook (T = Torre em português)
-    "r": "Rook", "R": "Rook", "t": "Rook", "T": "Rook",
-    # Bishop
-    "b": "Bishop", "B": "Bishop",
-    # Knight (C = Cavalo em português, N = Knight em inglês)
-    "n": "Knight", "N": "Knight", "c": "Knight", "C": "Knight",
+    "K": "King", "k": "King",
+    "Q": "Queen", "q": "Queen",
+    "R": "Rook", "r": "Rook",
+    "B": "Bishop", "b": "Bishop",
+    "N": "Knight", "n": "Knight",
 }
 
 
@@ -136,62 +132,66 @@ def _find_moving_piece(
 def parse_move_notation(
     notation: str,
     game: "Game",
-) -> tuple[Position, Position] | None:
-    """Parseia uma notação de movimento e retorna (origem, destino).
+) -> tuple[Position, Position, str] | None:
+    """Parseia uma notação PGN e retorna (origem, destino, sufixo).
 
-    Suporta:
+    Suporta apenas notação algébrica padrão internacional:
     - "e4" -> peão avança para e4
-    - "Cf3" / "Nf3" -> Cavalo para f3
+    - "Nf3" -> Cavalo para f3
     - "Bc4" -> Bispo para c4
-    - "Qh5" / "Dh5" -> Rainha para h5
-    - "Rh1" / "Th1" -> Torre para h1
+    - "Qh5" -> Rainha para h5
+    - "Rh1" -> Torre para h1
     - "Ke2" -> Rei para e2
     - "exd5" -> peão em e captura em d5
-    - "Cxf3" / "Nxf3" -> Cavalo captura em f3
-    - "e2-e4" -> notação longa
-    - "e2e4" -> notação completa
+    - "Nxf3" -> Cavalo captura em f3
+    - "O-O" -> roque curto
+    - "O-O-O" -> roque longo
+    - "e8=Q" -> promoção de peão
+    - Sufixos "+" (xeque) e "#" (xeque-mate) são obrigatórios quando aplicável
 
     Args:
         notation: String com a notação do movimento.
         game: Jogo atual para contexto (turno, tabuleiro).
 
     Returns:
-        Tuple (origem, destino) ou None se não conseguir parsear.
+        Tuple (origem, destino, sufixo) ou None se não conseguir parsear.
+        O sufixo é "+" ou "#" se o jogador digitou, ou "" se não digitou.
     """
-    notation = notation.strip().lower()
+    notation = notation.strip()
     if not notation:
+        return None
+
+    # Extrair sufixo informativo "+" e "#"
+    suffix = ""
+    if notation.endswith("#"):
+        suffix = "#"
+    elif notation.endswith("+"):
+        suffix = "+"
+    clean = notation[:len(notation) - len(suffix)] if suffix else notation
+    clean = clean.strip()
+    if not clean:
         return None
 
     board = game.board
     color = game.player_turn
 
-    # Notação longa: "e2-e4"
-    long_match = re.match(r"^([a-h][1-8])\-([a-h][1-8])$", notation)
-    if long_match:
-        origin = parse_position(long_match.group(1))
-        end = parse_position(long_match.group(2))
-        if origin and end:
-            return (origin, end)
-        return None
+    # Roque curto: "O-O"
+    if clean.upper() == "O-O":
+        result = _parse_castling(board, color, kingside=True)
+        return result + (suffix,) if result else None
 
-    # Notação completa: "e2e4"
-    full_match = re.match(r"^([a-h][1-8])([a-h][1-8])$", notation)
-    if full_match:
-        origin = parse_position(full_match.group(1))
-        end = parse_position(full_match.group(2))
-        if origin and end:
-            return (origin, end)
-        return None
+    # Roque longo: "O-O-O"
+    if clean.upper() == "O-O-O":
+        result = _parse_castling(board, color, kingside=False)
+        return result + (suffix,) if result else None
 
-    # Notação com captura: "exd5" ou "Cxf3"
-    capture_match = re.match(r"^([a-h])x([a-h][1-8])$", notation)
-    if capture_match:
-        origin_file = capture_match.group(1)
-        target = parse_position(capture_match.group(2))
+    # Promoção de peão com captura: "exd8=Q"
+    capture_promotion_match = re.match(r"^([a-h])x([a-h][1-8])=([KQRNBkqrnb])$", clean)
+    if capture_promotion_match:
+        origin_file = capture_promotion_match.group(1)
+        target = parse_position(capture_promotion_match.group(2))
         if target is None:
             return None
-
-        # É peão (só letra de coluna)
         # Encontrar peão na coluna indicada que pode capturar no destino
         for row in range(8):
             pos = Position(row, ord(origin_file) - ord("a"))
@@ -205,11 +205,47 @@ def parse_move_notation(
                 continue
             moves = piece.valid_moves(pos, board)
             if target in moves:
-                return (pos, target)
+                return (pos, target, suffix)
         return None
 
-    # Notação de peça com captura: "Cxf3" / "Nxf3"
-    piece_capture_match = re.match(r"^([a-z])x([a-h][1-8])$", notation)
+    # Promoção de peão: "e8=Q"
+    promotion_match = re.match(r"^([a-h][1-8])=([KQRNBkqrnb])$", clean)
+    if promotion_match:
+        target = parse_position(promotion_match.group(1))
+        if target is None:
+            return None
+        # Encontrar peão que pode chegar ao destino
+        origin = _find_moving_piece(board, target, None, color)
+        if origin:
+            return (origin, target, suffix)
+        return None
+
+    # Notação com captura de peão: "exd5"
+    capture_match = re.match(r"^([a-h])x([a-h][1-8])$", clean)
+    if capture_match:
+        origin_file = capture_match.group(1)
+        target = parse_position(capture_match.group(2))
+        if target is None:
+            return None
+
+        # Encontrar peão na coluna indicada que pode capturar no destino
+        for row in range(8):
+            pos = Position(row, ord(origin_file) - ord("a"))
+            piece = board.piece_at(pos)
+            if piece is None:
+                continue
+            if piece.color != color:
+                continue
+            from simple_chess.pieces.pawn import Pawn
+            if not isinstance(piece, Pawn):
+                continue
+            moves = piece.valid_moves(pos, board)
+            if target in moves:
+                return (pos, target, suffix)
+        return None
+
+    # Notação de peça com captura: "Nxf3"
+    piece_capture_match = re.match(r"^([KQRBNkqrnb])x([a-h][1-8])$", clean)
     if piece_capture_match:
         piece_letter = piece_capture_match.group(1)
         target = parse_position(piece_capture_match.group(2))
@@ -222,11 +258,12 @@ def parse_move_notation(
 
         origin = _find_moving_piece(board, target, piece_class_name, color)
         if origin:
-            return (origin, target)
+            return (origin, target, suffix)
         return None
 
-    # Notação curta de peça: "Cf3" / "Nf3"
-    piece_short_match = re.match(r"^([a-z])([a-h][1-8])$", notation)
+    # Notação curta de peça: "Nf3"
+    # Só aceita se NÃO é captura (captura exige "Nxf3")
+    piece_short_match = re.match(r"^([KQRBNkqrnb])([a-h][1-8])$", clean)
     if piece_short_match:
         piece_letter = piece_short_match.group(1)
         target = parse_position(piece_short_match.group(2))
@@ -237,21 +274,70 @@ def parse_move_notation(
         if piece_class_name is None:
             return None
 
+        # Verificar se há peça no destino — se sim, exige notação de captura
+        piece_at_target = board.piece_at(target)
+        if piece_at_target is not None:
+            # Há peça no destino — não aceitar "Nf3", exige "Nxf3"
+            return None
+
         origin = _find_moving_piece(board, target, piece_class_name, color)
         if origin:
-            return (origin, target)
+            return (origin, target, suffix)
         return None
 
     # Notação curta de peão: "e4"
-    pawn_short_match = re.match(r"^([a-h])([1-8])$", notation)
+    # Só aceita se NÃO é captura (captura exige "exd5")
+    pawn_short_match = re.match(r"^([a-h])([1-8])$", clean)
     if pawn_short_match:
         target = parse_position(pawn_short_match.group(0))
         if target is None:
             return None
 
+        # Verificar se há peça no destino — se sim, exige notação de captura
+        piece_at_target = board.piece_at(target)
+        if piece_at_target is not None:
+            # Há peça no destino — não aceitar "e4", exige "exd5"
+            return None
+
         origin = _find_moving_piece(board, target, None, color)
         if origin:
-            return (origin, target)
+            return (origin, target, suffix)
         return None
 
     return None
+
+
+def _parse_castling(
+    board: "Board", color: Color, kingside: bool
+) -> tuple[Position, Position] | None:
+    """Parseia movimento de roque.
+
+    Args:
+        board: Tabuleiro atual.
+        color: Cor da peça que está jogando.
+        kingside: True para roque curto (O-O), False para roque longo (O-O-O).
+
+    Returns:
+        Tuple (origem do rei, destino do rei) ou None.
+    """
+    # Encontrar o rei
+    from simple_chess.pieces.king import King
+    king_pos = board.find_king(color)
+    if king_pos is None:
+        return None
+
+    # Rei deve estar na posição inicial
+    if color == Color.WHITE:
+        if king_pos.row != 7 or king_pos.col != 4:
+            return None
+        if kingside:
+            return (Position(7, 4), Position(7, 6))
+        else:
+            return (Position(7, 4), Position(7, 2))
+    else:  # BLACK
+        if king_pos.row != 0 or king_pos.col != 4:
+            return None
+        if kingside:
+            return (Position(0, 4), Position(0, 6))
+        else:
+            return (Position(0, 4), Position(0, 2))
