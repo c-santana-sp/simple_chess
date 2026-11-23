@@ -26,6 +26,12 @@ class Game:
 		# En passant — armazena a posição do peão após um movimento de 2 casas
 		self.last_double_pawn_move: Position | None = None
 
+		# Regra dos 50 movimentos — contador de movimentos sem captura ou peão
+		self.fifty_move_counter: int = 0
+
+		# Repetição de posição — histórico de posições para detectar empate por 3x
+		self.position_history: list[str] = []
+
 	@property
 	def player_turn(self) -> Color:
 		return self.players[self.turn_index]
@@ -42,6 +48,7 @@ class Game:
 
 			# Detectar en passant — peão captura ao passar
 			is_en_passant = self.__is_en_passant(piece, origin_pos, end_pos)
+			captured = None
 			if is_en_passant:
 				# Remover o peão capturado (está na posição adjacente, não no destino)
 				captured_pawn_pos = Position(end_pos.row + 1 if piece.color == Color.WHITE else end_pos.row - 1, end_pos.col)
@@ -66,6 +73,12 @@ class Game:
 			# Promoção de peão — substituir peão pela peça escolhida
 			if promotion_piece is not None:
 				self.__promote_pawn(end_pos, promotion_piece)
+
+			# Atualizar regra dos 50 movimentos
+			self.__update_fifty_move_counter(piece, captured is not None)
+
+			# Registrar posição para repetição (após todas as mudanças)
+			self.__record_position()
 
 			if notation:
 				self.move_history.append(notation)
@@ -238,6 +251,12 @@ class Game:
 		# Desativar ambos os direitos de roque da cor
 		self.castling_rights[color]["kingside"] = False
 		self.castling_rights[color]["queenside"] = False
+
+		# Atualizar regra dos 50 movimentos (roque = movimento de rei, não reseta)
+		self.fifty_move_counter += 1
+
+		# Registrar posição para repetição
+		self.__record_position()
 
 		# Verificar se o roque dá xeque ou xeque-mate
 		gives_check = self.board.is_check(enemy_color)
@@ -624,14 +643,159 @@ class Game:
 		self.board.grid = original_grid
 		return True
 
+	def __update_fifty_move_counter(
+		self, piece: "Piece", was_capture: bool
+	) -> None:
+		"""Atualiza o contador da regra dos 50 movimentos.
+
+		Reseta se houver captura ou movimento de peão.
+		Incrementa caso contrário.
+		"""
+		from simple_chess.pieces.pawn import Pawn
+
+		if was_capture or isinstance(piece, Pawn):
+			self.fifty_move_counter = 0
+		else:
+			self.fifty_move_counter += 1
+
+	def __record_position(self) -> None:
+		"""Registra a posição atual do tabuleiro para detectar repetição.
+
+		Gera uma string que representa o estado do tabuleiro incluindo
+		peças, direitos de roque e en passant.
+		"""
+		position_key = self.__generate_position_key()
+		self.position_history.append(position_key)
+
+	def __generate_position_key(self) -> str:
+		"""Gera uma string única que representa a posição atual.
+
+		Inclui:
+		- Posição de todas as peças no tabuleiro
+		- Direitos de roque
+		- En passant disponível
+		- Cor do jogador atual
+		"""
+		parts = []
+
+		# Peças no tabuleiro
+		for row in range(8):
+			for col in range(8):
+				piece = self.board.piece_at(Position(row, col))
+				if piece is not None:
+					piece_type = type(piece).__name__[0]  # K, Q, R, B, N, P
+					color_char = "W" if piece.color == Color.WHITE else "B"
+					parts.append(f"{piece_type}{color_char}{row}{col}")
+
+		# Direitos de roque
+		for color in [Color.WHITE, Color.BLACK]:
+			rights = self.castling_rights[color]
+			color_char = "W" if color == Color.WHITE else "B"
+			if rights["kingside"]:
+				parts.append(f"{color_char}K")
+			if rights["queenside"]:
+				parts.append(f"{color_char}Q")
+
+		# En passant
+		if self.last_double_pawn_move is not None:
+			parts.append(f"EP{self.last_double_pawn_move.row}{self.last_double_pawn_move.col}")
+
+		# Cor do jogador atual
+		parts.append("W" if self.player_turn == Color.WHITE else "B")
+
+		return "|".join(parts)
+
+	def __is_insufficient_material(self) -> bool:
+		"""Verifica se o material no tabuleiro é insuficiente para xeque-mate.
+
+		Casos de empate:
+		- Rei vs Rei
+		- Rei + Bispo vs Rei
+		- Rei + Cavalo vs Rei
+		"""
+		white_pieces: list["Piece"] = []
+		black_pieces: list["Piece"] = []
+
+		for row in range(8):
+			for col in range(8):
+				piece = self.board.piece_at(Position(row, col))
+				if piece is not None:
+					if piece.color == Color.WHITE:
+						white_pieces.append(piece)
+					else:
+						black_pieces.append(piece)
+
+		# Classificar peças por tipo (excluindo reis)
+		white_non_kings = [p for p in white_pieces if not isinstance(p, King)]
+		black_non_kings = [p for p in black_pieces if not isinstance(p, King)]
+
+		# Rei vs Rei
+		if not white_non_kings and not black_non_kings:
+			return True
+
+		# Rei + Bispo vs Rei
+		if (len(white_non_kings) == 1 and isinstance(white_non_kings[0], Bishop)
+				and not black_non_kings):
+			return True
+
+		# Rei + Cavalo vs Rei
+		if (len(white_non_kings) == 1 and isinstance(white_non_kings[0], Knight)
+				and not black_non_kings):
+			return True
+
+		# Rei vs Rei + Bispo
+		if (not white_non_kings and len(black_non_kings) == 1
+				and isinstance(black_non_kings[0], Bishop)):
+			return True
+
+		# Rei vs Rei + Cavalo
+		if (not white_non_kings and len(black_non_kings) == 1
+				and isinstance(black_non_kings[0], Knight)):
+			return True
+
+		return False
+
+	def __is_threefold_repetition(self) -> bool:
+		"""Verifica se a posição atual ocorreu 3 vezes (repetição de posição).
+
+		Returns:
+			True se a posição atual apareceu 3 ou mais vezes no histórico.
+		"""
+		current_key = self.__generate_position_key()
+		count = self.position_history.count(current_key)
+		return count >= 3
+
+	def __is_fifty_move_rule(self) -> bool:
+		"""Verifica se 50 movimentos foram feitos sem captura ou movimento de peão.
+
+		Returns:
+			True se o contador atingiu 100 (50 movimentos de cada lado = 100 half-moves).
+		"""
+		return self.fifty_move_counter >= 100
+
 	def is_game_over(self) -> bool:
-		"""Verifica se o jogo terminou (xeque-mate ou stalemate).
+		"""Verifica se o jogo terminou.
+
+		Verifica:
+		- Xeque-mate
+		- Stalemate
+		- Material insuficiente
+		- Repetição de posição (3x)
+		- Regra dos 50 movimentos
 
 		Returns:
 			True se o jogo terminou.
 		"""
 		color = self.player_turn
-		return self.__is_checkmate(color) or self.__is_stalemate(color)
+		if self.__is_checkmate(color) or self.__is_stalemate(color):
+			return True
+		if self.__is_insufficient_material():
+			return True
+		if self.__is_threefold_repetition():
+			return True
+		if self.__is_fifty_move_rule():
+			return True
+		return False
 
 	def game_result(self) -> str | None:
 		"""Retorna o resultado do jogo, se terminou.
@@ -646,6 +810,12 @@ class Game:
 			return f"Xeque-mate — {winner_text} vencem!"
 		if self.__is_stalemate(color):
 			return "Empate por stalemate!"
+		if self.__is_insufficient_material():
+			return "Empate por material insuficiente!"
+		if self.__is_threefold_repetition():
+			return "Empate por repetição de posição (3x)!"
+		if self.__is_fifty_move_rule():
+			return "Empate por regra dos 50 movimentos!"
 		return None
 
 	def __is_valid_move(self, origin_pos: Position, end_pos: Position) -> bool:
