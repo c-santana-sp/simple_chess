@@ -1,16 +1,18 @@
 """CLI interativo — loop principal do jogo com input por texto.
 
-Jogabilidade (notação algébrica):
+Jogabilidade (notação algébrica padrão internacional PGN):
 - "e4" — peão avança para e4
-- "Cf3" / "Nf3" — Cavalo para f3
+- "Nf3" — Cavalo para f3
 - "Bc4" — Bispo para c4
-- "Qh5" / "Dh5" — Rainha para h5
-- "Rh1" / "Th1" — Torre para h1
+- "Qh5" — Rainha para h5
+- "Rh1" — Torre para h1
 - "Ke2" — Rei para e2
 - "exd5" — peão em e captura em d5
-- "Cxf3" — Cavalo captura em f3
-- "e2-e4" — notação longa (origem-destino)
-- "e2 e4" — notação longa com espaço
+- "Nxf3" — Cavalo captura em f3
+- "O-O" — roque curto
+- "O-O-O" — roque longo
+- "e8=Q" — promoção de peão
+- "?e2" — visualizar jogadas válidas da peça em e2 (não vai para o histórico)
 - Digite 'sair' ou 'q' para encerrar.
 
 O tabuleiro fica fixo na tela (estilo htop) graças ao rich.Live.
@@ -150,27 +152,20 @@ def main() -> None:
 
                     parts = raw.split()
 
-                    # Tentar notação algébrica primeiro (e4, Cf3, exd5, e2-e4)
-                    if len(parts) == 1:
-                        success = game.make_move_from_notation(parts[0])
-                        if success:
-                            selected = None
-                            valid_moves = None
-                            view.render(game, selected, valid_moves, "")
-                            continue
-
-                        # Se falhou, tenta como seleção de origem
-                        origin = parse_algebraic(parts[0])
+                    # Comando de ajuda: "?e2" — visualizar jogadas válidas
+                    if len(parts) == 1 and parts[0].startswith("?"):
+                        house = parts[0][1:]  # remover o "?"
+                        origin = parse_algebraic(house)
                         if origin is None:
                             view.render(
                                 game, None, None,
-                                "Jogada não entendida. Use 'e4', 'Cf3', 'e2-e4'.",
+                                f"'{house}' não é uma posição válida. Use '?e2'.",
                             )
                             continue
 
                         piece = game.board.piece_at(origin)
                         if piece is None:
-                            view.render(game, origin, None, "Nao ha peeca nesta posicao.")
+                            view.render(game, origin, None, "Não há peça nesta posição.")
                             continue
 
                         if piece.color != game.player_turn:
@@ -181,34 +176,46 @@ def main() -> None:
                             )
                             continue
 
-                        # Peça válida — mostrar jogadas possiveis
-                        selected = origin
-                        valid_moves = piece.valid_moves(origin, game.board)
-                        view.render(game, selected, valid_moves, "")
+                        # Mostrar movimentos válidos — não vai para o histórico
+                        valid = piece.valid_moves(origin, game.board)
+                        view.render(game, origin, valid, "")
                         continue
 
-                    # Notacao com espaco: "e2 e4"
-                    if len(parts) == 2:
-                        origin = parse_algebraic(parts[0])
-                        end = parse_algebraic(parts[1])
-
-                        if origin is None or end is None:
-                            view.render(game, None, None, "Posicao invalida.")
-                            continue
-
-                        success = game.make_move(origin, end, raw)
+                    # Notação PGN padrão: "e4", "Nf3", "exd5", "O-O", "e8=Q"
+                    if len(parts) == 1:
+                        notation = parts[0]
+                        success = game.make_move_from_notation(notation)
                         if success:
                             selected = None
                             valid_moves = None
+
+                            # Verificar se o jogo terminou
+                            if game.is_game_over():
+                                result = game.game_result()
+                                view.render(game, selected, valid_moves, result or "")
+                                # Aguardar um momento e encerrar
+                                time.sleep(3)
+                                break
+
                             view.render(game, selected, valid_moves, "")
+                            continue
+
+                        # Movimento rejeitado — dar feedback inteligente
+                        if game.board.is_check(game.player_turn):
+                            view.render(
+                                game, None, None,
+                                "Rei em xeque! Saia do xeque. Use '+' no final: Qxf7+",
+                            )
                         else:
-                            view.render(game, None, None, "Jogada invalida.")
+                            # Tentar detectar o erro comum
+                            msg = _get_helpful_error(notation, game)
+                            view.render(game, None, None, msg)
                         continue
 
-                    # Input com mais de 2 partes
+                    # Input com mais de 1 parte (sem o "?")
                     view.render(
                         game, None, None,
-                        "Uso: 'e4', 'Cf3', 'e2-e4' ou 'e2 e4'",
+                        "Uso: 'e4', 'Nf3', 'exd5', 'O-O', '?e2' para ver jogadas.",
                     )
                     continue
 
@@ -228,3 +235,70 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def _get_helpful_error(notation: str, game: "Game") -> str:
+    """Gera uma mensagem de erro útil baseada na notação digitada.
+
+    Detecta erros comuns:
+    - Esqueceu o 'x' na captura
+    - Esqueceu o '+' no xeque
+    - Notação inválida
+    """
+    from simple_chess.move_parser import parse_move_notation
+    from simple_chess.position import Position
+
+    notation_lower = notation.lower()
+
+    # Tentar parsear sem sufixo para ver se o movimento em si é válido
+    result = parse_move_notation(notation_lower, game)
+    if result is None:
+        # Notação não reconhecida — verificar se é captura sem 'x'
+        # Ex: "e4" quando deveria ser "exd5"
+        import re
+        # Verificar se é notação de peão
+        pawn_match = re.match(r"^([a-h])([1-8])$", notation_lower)
+        if pawn_match:
+            target_str = pawn_match.group(0)
+            from simple_chess.move_parser import parse_position
+            target = parse_position(target_str)
+            if target is not None:
+                piece = game.board.piece_at(target)
+                if piece is not None:
+                    return f"Captura! Use 'x': {notation_lower[0]}x{notation_lower[1:]}"
+
+        # Verificar se é notação de peça
+        piece_match = re.match(r"^([kqrnb])([a-h][1-8])$", notation_lower)
+        if piece_match:
+            piece_letter = piece_match.group(1)
+            target_str = piece_match.group(2)
+            from simple_chess.move_parser import parse_position
+            target = parse_position(target_str)
+            if target is not None:
+                piece = game.board.piece_at(target)
+                if piece is not None:
+                    return f"Captura! Use 'x': {piece_letter.upper()}x{target_str}"
+
+        return f"'{notation}' não é uma jogada válida. Consulte a notação abaixo."
+
+    # Parse funcionou — verificar se é problema de sufixo
+    origin, end, user_suffix = result
+
+    # Simular o movimento para ver se dá xeque
+    from simple_chess.color import Color
+    enemy_color = Color.BLACK if game.player_turn == Color.WHITE else Color.WHITE
+
+    original_grid = game.board.grid
+    game.board.grid = [row[:] for row in original_grid]
+    piece = game.board.piece_at(origin)
+    game.board.place(origin, None)
+    game.board.place(end, piece)
+    gives_check = game.board.is_check(enemy_color)
+    game.board.grid = original_grid
+
+    if gives_check and user_suffix not in ("+", "#"):
+        # Reconstruir a notação com capitalização correta
+        clean_notation = notation[0].upper() + notation[1:] if notation else notation
+        return f"Xeque! Adicione '+' no final: {clean_notation}+"
+
+    return f"'{notation}' não é uma jogada válida. Consulte a notação abaixo."
