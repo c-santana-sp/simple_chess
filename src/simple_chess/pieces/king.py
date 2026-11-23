@@ -10,4 +10,16 @@ class King(Piece):
 	symbol = "k"
 
 	def valid_moves(self, pos: Position, board: "Board") -> list[Position]:
-		pass
+		# 8 direções adjacentes (1 casa em qualquer direção)
+		offsets = [
+			(-1, -1), (-1, 0), (-1, 1),
+			(0, -1),           (0, 1),
+			(1, -1),  (1, 0),  (1, 1),
+		]
+		moves = []
+		for dr, dc in offsets:
+			new_pos = Position(pos.row + dr, pos.col + dc)
+			if board.in_bounds(new_pos):
+				if board.is_empty(new_pos) or board.has_enemy(new_pos, self.color):
+					moves.append(new_pos)
+		return moves
