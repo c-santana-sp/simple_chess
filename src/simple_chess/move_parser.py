@@ -86,11 +86,14 @@ def _find_moving_piece(
     target_pos: Position,
     piece_class_name: str | None,
     color: Color,
+    disambig_file: str | None = None,
+    disambig_rank: str | None = None,
 ) -> Position | None:
     """Encontra qual peça deve se mover para target_pos.
 
-    Busca todas as peças do jogador atual que podem chegar a target_pos
-    e retorna a posição da primeira que encontra.
+    Busca todas as peças do jogador atual que podem chegar a target_pos.
+    Se múltiplas peças podem chegar, usa a desambiguação (coluna e/ou fileira)
+    para distinguir. Se apenas uma peça pode chegar, retorna ela.
 
     Args:
         board: Tabuleiro atual.
@@ -98,10 +101,14 @@ def _find_moving_piece(
         piece_class_name: Nome da classe da peça (ex: "Knight").
             Se None, busca peões.
         color: Cor da peça que está jogando.
+        disambig_file: Coluna de desambiguação (ex: "d" em Ndf3).
+        disambig_rank: Fileira de desambiguação (ex: "1" em R1d3).
 
     Returns:
         Position da peça de origem ou None.
     """
+    candidates: list[Position] = []
+
     for row in range(8):
         for col in range(8):
             pos = Position(row, col)
@@ -124,8 +131,37 @@ def _find_moving_piece(
             # Verificar se esta peça pode chegar ao destino
             moves = piece.valid_moves(pos, board)
             if moves is not None and target_pos in moves:
-                return pos
+                candidates.append(pos)
 
+    # Se não há candidatos, retornar None
+    if not candidates:
+        return None
+
+    # Se há desambiguação, filtrar
+    if disambig_file is not None or disambig_rank is not None:
+        filtered: list[Position] = []
+        for pos in candidates:
+            # Verificar coluna de desambiguação
+            if disambig_file is not None:
+                col_letter = chr(ord("a") + pos.col)
+                if col_letter != disambig_file:
+                    continue
+            # Verificar fileira de desambiguação
+            if disambig_rank is not None:
+                rank = str(8 - pos.row)
+                if rank != disambig_rank:
+                    continue
+            filtered.append(pos)
+        if filtered:
+            return filtered[0]
+        return None
+
+    # Sem desambiguação — se há exatamente 1 candidato, retorna
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Múltiplos candidatos e sem desambiguação — rejeitar
+    # O jogador precisa usar desambiguação (Ndf3, Nef3, R1d3, Rcd3)
     return None
 
 
@@ -244,11 +280,15 @@ def parse_move_notation(
                 return (pos, target, suffix)
         return None
 
-    # Notação de peça com captura: "Nxf3"
-    piece_capture_match = re.match(r"^([KQRBNkqrnb])x([a-h][1-8])$", clean)
+    # Notação de peça com captura e desambiguação: "Nxf3", "Nfxd5", "N1xd5", "Nfxd5"
+    # Desambiguação pode ser coluna (a-h), fileira (1-8), ou ambos
+    piece_capture_match = re.match(
+        r"^([KQRBNkqrnb])([a-h]?[1-8]?)x([a-h][1-8])$", clean
+    )
     if piece_capture_match:
         piece_letter = piece_capture_match.group(1)
-        target = parse_position(piece_capture_match.group(2))
+        disambig = piece_capture_match.group(2)
+        target = parse_position(piece_capture_match.group(3))
         if target is None:
             return None
 
@@ -256,17 +296,33 @@ def parse_move_notation(
         if piece_class_name is None:
             return None
 
-        origin = _find_moving_piece(board, target, piece_class_name, color)
+        # Extrair desambiguação
+        disambig_file = None
+        disambig_rank = None
+        if disambig:
+            if disambig[0].isalpha():
+                disambig_file = disambig[0]
+            if len(disambig) > 1 and disambig[-1].isdigit():
+                disambig_rank = disambig[-1]
+            elif len(disambig) == 1 and disambig[0].isdigit():
+                disambig_rank = disambig[0]
+
+        origin = _find_moving_piece(
+            board, target, piece_class_name, color, disambig_file, disambig_rank
+        )
         if origin:
             return (origin, target, suffix)
         return None
 
-    # Notação curta de peça: "Nf3"
+    # Notação curta de peça com desambiguação: "Nf3", "Ndf3", "N1f3", "N1df3"
     # Só aceita se NÃO é captura (captura exige "Nxf3")
-    piece_short_match = re.match(r"^([KQRBNkqrnb])([a-h][1-8])$", clean)
+    piece_short_match = re.match(
+        r"^([KQRBNkqrnb])([a-h]?[1-8]?)([a-h][1-8])$", clean
+    )
     if piece_short_match:
         piece_letter = piece_short_match.group(1)
-        target = parse_position(piece_short_match.group(2))
+        disambig = piece_short_match.group(2)
+        target = parse_position(piece_short_match.group(3))
         if target is None:
             return None
 
@@ -280,7 +336,20 @@ def parse_move_notation(
             # Há peça no destino — não aceitar "Nf3", exige "Nxf3"
             return None
 
-        origin = _find_moving_piece(board, target, piece_class_name, color)
+        # Extrair desambiguação
+        disambig_file = None
+        disambig_rank = None
+        if disambig:
+            if disambig[0].isalpha():
+                disambig_file = disambig[0]
+            if len(disambig) > 1 and disambig[-1].isdigit():
+                disambig_rank = disambig[-1]
+            elif len(disambig) == 1 and disambig[0].isdigit():
+                disambig_rank = disambig[0]
+
+        origin = _find_moving_piece(
+            board, target, piece_class_name, color, disambig_file, disambig_rank
+        )
         if origin:
             return (origin, target, suffix)
         return None
