@@ -67,6 +67,7 @@ class RichView(Renderer):
         self._status_message = ""
         self._selected: Position | None = None
         self._valid_moves: list[Position] | None = None
+        self._help_mode = False  # True quando o painel de ajuda está visível
 
     # --- Properties de configuração ---
 
@@ -433,6 +434,7 @@ class RichView(Renderer):
 
         # Comandos
         ref_table.add_row("?e2", "Ver jogadas")
+        ref_table.add_row("help", "Ajuda completa")
         ref_table.add_row("sair", "Encerrar")
 
         title_text = Text("Notação PGN", style="bold yellow")
@@ -442,6 +444,54 @@ class RichView(Renderer):
             border_style="dim",
             padding=(0, 1),
             width=24,
+        )
+
+    def _build_help_panel(self) -> "Panel":
+        """Constrói o painel de ajuda com colunas para otimizar espaço vertical."""
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        # Tabela com 4 colunas usando ratio para distribuição proporcional
+        help_table = Table(show_header=False, box=None, padding=(0, 1))
+        help_table.add_column("Sec1", style="bold cyan", ratio=1)
+        help_table.add_column("Desc1", style="dim", ratio=2)
+        help_table.add_column("Sec2", style="bold cyan", ratio=1)
+        help_table.add_column("Desc2", style="dim", ratio=2)
+
+        # Linha 1: Peças + Comandos
+        help_table.add_row("Peças", "", "Comandos", "")
+        help_table.add_row("  K", "Rei", "  ?{casa}", "Ver jogadas da peça")
+        help_table.add_row("  Q", "Rainha", "  help/h", "Mostrar esta ajuda")
+        help_table.add_row("  R", "Torre", "  q", "Sair da ajuda")
+        help_table.add_row("  B", "Bispo", "  sair", "Encerrar o jogo")
+        help_table.add_row("  N", "Cavalo", "", "")
+        help_table.add_row("  (sem letra)", "Peão", "", "")
+        help_table.add_row("", "", "", "")
+
+        # Linha 2: Notação + Regras
+        help_table.add_row("Notação", "", "Regras", "")
+        help_table.add_row("  {destino}", "Movimento simples", "  Xeque", "Rei atacado")
+        help_table.add_row("  {o}x{d}", "Captura (x obrig.)", "  Mate", "Xeque sem saída")
+        help_table.add_row("  {destino}+", "Xeque (+ obrig.)", "  Stalemate", "Sem movimentos")
+        help_table.add_row("  {destino}#", "Xeque-mate (# obrig.)", "  50 moves", "Sem captura/peão")
+        help_table.add_row("  {L}{c}{d}", "Desambiguação", "  3x repet.", "Posição 3x")
+        help_table.add_row("", "", "", "")
+
+        # Linha 3: Especiais + Destaque
+        help_table.add_row("Especiais", "", "Destaque", "")
+        help_table.add_row("  O-O", "Roque curto", "  ★", "Peça selecionada")
+        help_table.add_row("  O-O-O", "Roque longo", "  · (azul)", "Movimento válido")
+        help_table.add_row("  {d}={p}", "Promoção (ex: e8=Q)", "  · (verm.)", "Captura possível")
+        help_table.add_row("  {o}x{d}", "En passant", "  !", "Rei em xeque")
+
+        title_text = Text("  ♔ AJUDA — Como Jogar  ", style="bold yellow", justify="center")
+        return Panel(
+            help_table,
+            title=title_text,
+            border_style="yellow",
+            padding=(0, 2),
+            expand=True,
         )
 
     def _build_full_layout(
@@ -456,6 +506,12 @@ class RichView(Renderer):
         from rich.layout import Layout
         from rich.panel import Panel
         from rich.text import Text
+
+        # Se no modo help, mostrar o painel de ajuda
+        if self._help_mode:
+            help_panel = self._build_help_panel()
+            cmd_line = Text("  Pressione 'q' para voltar ao jogo  ", style="bold green", justify="center")
+            return Group(help_panel, cmd_line)
 
         # Turno info
         turn_color = game.player_turn
@@ -542,13 +598,21 @@ class RichView(Renderer):
         self._status_message = status_message
 
     def get_renderable(self, game: Game):
-        """Retorna o renderable atualizado para o Live display."""
-        return self._build_full_layout(
-            game,
-            self._selected,
-            self._valid_moves,
-            self._status_message,
-        )
+        """Retorna o renderable atualizado para o Live display.
+        
+        Protegido contra exceções durante a renderização para não crashar o jogo.
+        """
+        try:
+            return self._build_full_layout(
+                game,
+                self._selected,
+                self._valid_moves,
+                self._status_message,
+            )
+        except Exception:
+            # Fallback: retornar um texto simples se a renderização falhar
+            from rich.text import Text
+            return Text("Erro de renderização. Redimensione o terminal.", style="bold red")
 
     def handle_key(self, key: str) -> tuple[str, bool]:
         """Processa uma tecla digitada e atualiza o input buffer.
@@ -560,6 +624,15 @@ class RichView(Renderer):
             Tuple (input_completo, should_execute).
             should_execute é True quando Enter foi pressionado.
         """
+        # No modo help, só a tecla 'q' sai do help
+        if self._help_mode:
+            if key == "q":
+                self._help_mode = False
+                self._current_input = ""
+                return "", False
+            # Ignorar todas as outras teclas no modo help
+            return "", False
+
         if key == "\n" or key == "\r":
             # Enter — executar comando
             cmd = self._current_input
