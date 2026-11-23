@@ -323,7 +323,7 @@ class RichView(Renderer):
             title=title,
             border_style="dim",
             padding=(0, 1),
-            expand=True,
+            width=22,
         )
 
     def _build_history_bar(self, game: Game) -> "Panel":
@@ -352,9 +352,9 @@ class RichView(Renderer):
                 if black_move:
                     tokens.append(black_move)
 
-            # Limitar tokens para no máximo 3 linhas
+            # Limitar tokens para no máximo 3 linhas dentro da coluna central
             max_lines = 3
-            chars_per_line = 116  # largura do terminal menos bordas
+            chars_per_line = 18  # largura do painel menos bordas
             tokens_per_line = chars_per_line // 6  # ~6 chars por token
             max_tokens = max_lines * tokens_per_line
 
@@ -375,7 +375,7 @@ class RichView(Renderer):
             title=history_title,
             border_style="dim",
             padding=(0, 1),
-            expand=True,
+            width=22,
         )
 
     def _build_command_line(self, game: Game) -> "Text":
@@ -420,10 +420,10 @@ class RichView(Renderer):
         # Movimentos
         ref_table.add_row("e4", "Peão avança")
         ref_table.add_row("Nf3", "Peça para casa")
-        ref_table.add_row("Ndf3", "Desambiguação")
+        ref_table.add_row("Ndf3", "Desamb.")
         ref_table.add_row("exd5", "Captura")
         ref_table.add_row("e4+", "Xeque (obrig.)")
-        ref_table.add_row("e4#", "Xeque-mate (obrig.)")
+        ref_table.add_row("e4#", "Xeque-mate")
         ref_table.add_row("")
 
         # Movimentos especiais
@@ -443,7 +443,7 @@ class RichView(Renderer):
             title=title_text,
             border_style="dim",
             padding=(0, 1),
-            width=24,
+            width=22,
         )
 
     def _build_help_panel(self) -> "Panel":
@@ -501,10 +501,9 @@ class RichView(Renderer):
         valid_moves: list[Position] | None = None,
         status_message: str = "",
     ) -> "Group":
-        from rich.align import Align
         from rich.console import Group
-        from rich.layout import Layout
         from rich.panel import Panel
+        from rich.table import Table
         from rich.text import Text
 
         # Se no modo help, mostrar o painel de ajuda
@@ -518,29 +517,30 @@ class RichView(Renderer):
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
         title = Text(f"  {self.title_text}  |  Vez das: {turn_text}", style=self.title_style, justify="center")
 
-        # Tabuleiro — centralizado
+        # --- Coluna 1: tabuleiro + linha de comando (esquerda) ---
         board_table = self._build_table(game, selected, valid_moves)
+        cmd_line = self._build_command_line(game)
+        col_board = Group(board_table, cmd_line)
 
-        # Painel de referência de notação — alinhado à direita
+        # --- Coluna 2: capturadas + histórico (central) ---
+        captured_panel = self._build_captured_bar(game)
+        history_panel = self._build_history_bar(game)
+        col_sidebar = Group(captured_panel, Text(""), history_panel)
+
+        # --- Coluna 3: referência de notação PGN (direita) ---
         reference_panel = self._build_reference_panel()
 
-        # Linha principal: tabuleiro no centro + referência à extrema direita
-        # Para isso, usamos Columns onde o tabuleiro ocupa o espaço central
-        # e a referência é empurrada para a direita
-        from rich.columns import Columns
-        from rich.align import Align
-        centered_board = Align(board_table, align="center")
-        right_ref = Align(reference_panel, align="right")
-        main_row = Columns([centered_board, right_ref], equal=False, expand=True)
-
-        # Painéis separados: capturadas + histórico (empilhados verticalmente)
-        captured_bar = self._build_captured_bar(game)
-        history_bar = self._build_history_bar(game)
-        info_row = Group(captured_bar, history_bar)
+        # Usar Table com 3 colunas para forçar layout lado a lado
+        # O Columns do Rich quebra linha se o conteúdo não cabe,
+        # mas Table com fixed_width força tudo na mesma linha
+        main_row = Table(show_header=False, box=None, padding=(0, 0), expand=True)
+        main_row.add_column("Board", ratio=2)
+        main_row.add_column("Sidebar", ratio=1)
+        main_row.add_column("Ref", ratio=1)
+        main_row.add_row(col_board, col_sidebar, reference_panel)
 
         # Status line — prioriza mensagem de game-over, depois status, depois xeque
         if status_message:
-            # Detectar mensagens de game-over para estilização especial
             if "Xeque-mate" in status_message:
                 status_text = Text(
                     f"  ♛ {status_message}  ", style="bold green", justify="center"
@@ -563,20 +563,7 @@ class RichView(Renderer):
         else:
             status_text = Text("  ", style="dim")
 
-        # Command line
-        cmd_line = self._build_command_line(game)
-
-        # Rodapé: status + command line
-        bottom_section = Panel(
-            Group(status_text, cmd_line),
-            border_style="dim",
-            padding=(0, 1),
-            expand=True,
-        )
-
-        # Linha vazia como margem entre tabuleiro e painéis
-        gap = Text("")
-        return Group(title, main_row, gap, info_row, bottom_section)
+        return Group(title, main_row, status_text)
 
     def render(
         self,
