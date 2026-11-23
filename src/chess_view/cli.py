@@ -13,7 +13,8 @@ Jogabilidade (notação algébrica padrão internacional PGN):
 - "O-O-O" — roque longo
 - "e8=Q" — promoção de peão
 - "?e2" — visualizar jogadas válidas da peça em e2 (não vai para o histórico)
-- Digite 'sair' ou 'q' para encerrar.
+- "help" ou "h" — exibir painel de ajuda (pressione 'q' para voltar)
+- Digite 'sair' para encerrar.
 
 O tabuleiro fica fixo na tela (estilo htop) graças ao rich.Live.
 O input é capturado caractere por caractere com termios + select,
@@ -142,13 +143,27 @@ def main() -> None:
             key = _read_key_nonblocking(fd)
 
             if key is not None:
-                cmd, should_execute = view.handle_key(key)
+                # Processar cada caractere individualmente
+                # os.read() pode retornar múltiplos caracteres de uma vez
+                for ch in key:
+                    cmd, should_execute = view.handle_key(ch)
 
-                if should_execute and cmd:
+                    if not should_execute:
+                        continue
+
+                    if not cmd:
+                        continue
+
                     raw = cmd.lower()
 
-                    if raw in ("sair", "q", "quit", "exit"):
+                    if raw in ("sair", "quit", "exit"):
                         break
+
+                    # Comando de ajuda: "help" ou "h" — ativa o painel de ajuda
+                    if raw in ("help", "h"):
+                        view._help_mode = True
+                        view._current_input = ""
+                        break  # sair do for, continuar o while
 
                     parts = raw.split()
 
@@ -161,12 +176,12 @@ def main() -> None:
                                 game, None, None,
                                 f"'{house}' não é uma posição válida. Use '?e2'.",
                             )
-                            continue
+                            break
 
                         piece = game.board.piece_at(origin)
                         if piece is None:
                             view.render(game, origin, None, "Não há peça nesta posição.")
-                            continue
+                            break
 
                         if piece.color != game.player_turn:
                             turn_name = "Brancas" if game.player_turn == Color.WHITE else "Pretas"
@@ -174,12 +189,12 @@ def main() -> None:
                                 game, origin, None,
                                 f"Peça não é sua. Vez das {turn_name}.",
                             )
-                            continue
+                            break
 
                         # Mostrar movimentos válidos — não vai para o histórico
                         valid = piece.valid_moves(origin, game.board)
                         view.render(game, origin, valid, "")
-                        continue
+                        break
 
                     # Notação PGN padrão: "e4", "Nf3", "exd5", "O-O", "e8=Q"
                     if len(parts) == 1:
@@ -193,12 +208,12 @@ def main() -> None:
                             if game.is_game_over():
                                 result = game.game_result()
                                 view.render(game, selected, valid_moves, result or "")
-                                # Aguardar um momento e encerrar
-                                time.sleep(3)
+                                # Aguardar brevemente para o jogador ver o resultado
+                                time.sleep(1.5)
                                 break
 
                             view.render(game, selected, valid_moves, "")
-                            continue
+                            break
 
                         # Movimento rejeitado — dar feedback inteligente
                         if game.board.is_check(game.player_turn):
@@ -210,23 +225,34 @@ def main() -> None:
                             # Tentar detectar o erro comum
                             msg = _get_helpful_error(notation, game)
                             view.render(game, None, None, msg)
-                        continue
+                        break
 
                     # Input com mais de 1 parte (sem o "?")
                     view.render(
                         game, None, None,
-                        "Uso: 'e4', 'Nf3', 'exd5', 'O-O', '?e2' para ver jogadas.",
+                        "Uso: 'e4', 'Nf3', 'exd5', 'O-O', '?e2', 'help'.",
                     )
-                    continue
+                    break
 
             # Atualizar display a cada iteracao
-            live.update(view.get_renderable(game))
-            time.sleep(0.05)
+            try:
+                live.update(view.get_renderable(game))
+            except Exception:
+                # Ignorar erros de renderização (ex: terminal redimensionado,
+                # suspenso, ou em estado inconsistente) para não crashar o jogo
+                pass
+
+            # Reduzir frequência de atualização para economizar CPU
+            # e evitar conflitos com rich.Live.refresh()
+            time.sleep(0.1)
 
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
-        live.stop()
+        try:
+            live.stop()
+        except Exception:
+            pass  # Live pode já estar parado
         try:
             _restore_terminal(fd, old_settings)
         except (termios.error, OSError):
