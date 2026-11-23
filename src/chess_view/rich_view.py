@@ -112,8 +112,19 @@ class RichView(Renderer):
         return self._config.get("board", {}).get("valid_capture_color", "#6b2a2a")
 
     @property
-    def piece_text_color(self) -> str:
-        return self._config.get("board", {}).get("piece_text_color", "white")
+    def check_square_color(self) -> str:
+        """Cor de fundo para a casa do rei quando está em xeque (vermelho escuro)."""
+        return self._config.get("board", {}).get("check_square_color", "#8b0000")
+
+    @property
+    def white_piece_color(self) -> str:
+        """Cor do texto das peças brancas."""
+        return self._config.get("board", {}).get("white_piece_color", "white")
+
+    @property
+    def black_piece_color(self) -> str:
+        """Cor do texto das peças pretas (cinza para contraste)."""
+        return self._config.get("board", {}).get("black_piece_color", "#777777")
 
     @property
     def piece_bold(self) -> bool:
@@ -196,8 +207,16 @@ class RichView(Renderer):
         selected_fg = self.selected_text_color
         valid_move_bg = self.valid_move_color
         valid_capture_bg = self.valid_capture_color
-        piece_color = self.piece_text_color
+        check_bg = self.check_square_color
+        white_piece_color = self.white_piece_color
+        black_piece_color = self.black_piece_color
         bold_prefix = "bold " if self.piece_bold else ""
+
+        # Encontrar a posição do rei do jogador atual para destacar xeque
+        from simple_chess.pieces.king import King
+        king_in_check_pos = None
+        if game.board.is_check(game.player_turn):
+            king_in_check_pos = game.board.find_king(game.player_turn)
 
         for row in row_order:
             cells: list[RichText] = []
@@ -208,26 +227,34 @@ class RichView(Renderer):
 
                 is_selected = selected == pos
                 is_valid = pos in valid_set
+                is_check_square = king_in_check_pos == pos
                 is_light = (row + col) % 2 == 0
 
                 has_piece = symbol.strip()
+
+                # Cor da peça depende da cor (branca ou preta)
+                piece_fg = white_piece_color if piece and piece.color == Color.WHITE else black_piece_color
 
                 # Determinar estilo e texto da célula
                 if is_selected:
                     piece_line = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
                     style = f"{bold_prefix}{selected_fg} on {selected_bg}"
+                elif is_check_square:
+                    # Rei em xeque — destaque vermelho
+                    piece_line = f" {symbol}! " if has_piece else "    "
+                    style = f"{bold_prefix}white on {check_bg}"
                 elif is_valid and has_piece:
                     # Casa com peça inimiga — captura (vermelho opaco)
                     piece_line = f" {symbol}{valid_marker} "
-                    style = f"{bold_prefix}{piece_color} on {valid_capture_bg}"
+                    style = f"{bold_prefix}{piece_fg} on {valid_capture_bg}"
                 elif is_valid and not has_piece:
                     # Casa vazia — movimento (azul opaco)
                     piece_line = f"  {valid_marker}  "
-                    style = f"{bold_prefix}{piece_color} on {valid_move_bg}"
+                    style = f"{bold_prefix}{piece_fg} on {valid_move_bg}"
                 else:
                     bg = light_color if is_light else dark_color
                     piece_line = f" {symbol} " if has_piece else "    "
-                    style = f"{bold_prefix}{piece_color} on {bg}"
+                    style = f"{bold_prefix}{piece_fg} on {bg}"
 
                 # Se cell_height > 1, centralizar a peça verticalmente
                 if cell_h > 1:
@@ -370,6 +397,52 @@ class RichView(Renderer):
 
         return cmd
 
+    def _build_reference_panel(self) -> "Panel":
+        """Constrói o painel de referência de notação PGN — vertical, na lateral direita."""
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        # Tabela de referência com duas colunas: notação e descrição
+        ref_table = Table(show_header=False, box=None, padding=(0, 0))
+        ref_table.add_column("Not", style="bold cyan", width=6)
+        ref_table.add_column("Descrição", style="dim", no_wrap=False)
+
+        # Peças
+        ref_table.add_row("K", "Rei")
+        ref_table.add_row("Q", "Rainha")
+        ref_table.add_row("R", "Torre")
+        ref_table.add_row("B", "Bispo")
+        ref_table.add_row("N", "Cavalo")
+        ref_table.add_row("")
+
+        # Movimentos
+        ref_table.add_row("e4", "Peão avança")
+        ref_table.add_row("Nf3", "Peça para casa")
+        ref_table.add_row("exd5", "Captura")
+        ref_table.add_row("e4+", "Xeque")
+        ref_table.add_row("e4#", "Xeque-mate")
+        ref_table.add_row("")
+
+        # Movimentos especiais
+        ref_table.add_row("O-O", "Roque curto")
+        ref_table.add_row("O-O-O", "Roque longo")
+        ref_table.add_row("e8=Q", "Promoção")
+        ref_table.add_row("")
+
+        # Comandos
+        ref_table.add_row("?e2", "Ver jogadas")
+        ref_table.add_row("sair", "Encerrar")
+
+        title_text = Text("Notação PGN", style="bold yellow")
+        return Panel(
+            ref_table,
+            title=title_text,
+            border_style="dim",
+            padding=(0, 1),
+            width=24,
+        )
+
     def _build_full_layout(
         self,
         game: Game,
@@ -377,36 +450,61 @@ class RichView(Renderer):
         valid_moves: list[Position] | None = None,
         status_message: str = "",
     ) -> "Group":
+        from rich.align import Align
         from rich.console import Group
+        from rich.layout import Layout
         from rich.panel import Panel
         from rich.text import Text
-
-        # Tabuleiro — centralizado sem borda
-        from rich.align import Align
-        board_table = self._build_table(game, selected, valid_moves)
-        centered_board = Align(board_table, align="center")
 
         # Turno info
         turn_color = game.player_turn
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
         title = Text(f"  {self.title_text}  |  Vez das: {turn_text}", style=self.title_style, justify="center")
 
+        # Tabuleiro — centralizado
+        board_table = self._build_table(game, selected, valid_moves)
+
+        # Painel de referência de notação — alinhado à direita
+        reference_panel = self._build_reference_panel()
+
+        # Linha principal: tabuleiro no centro + referência à extrema direita
+        # Para isso, usamos Columns onde o tabuleiro ocupa o espaço central
+        # e a referência é empurrada para a direita
+        from rich.columns import Columns
+        from rich.align import Align
+        centered_board = Align(board_table, align="center")
+        right_ref = Align(reference_panel, align="right")
+        main_row = Columns([centered_board, right_ref], equal=False, expand=True)
+
         # Painéis separados: capturadas + histórico (empilhados verticalmente)
         captured_bar = self._build_captured_bar(game)
         history_bar = self._build_history_bar(game)
         info_row = Group(captured_bar, history_bar)
 
-        # Status line
+        # Status line — prioriza mensagem de game-over, depois status, depois xeque
         if status_message:
+            # Detectar mensagens de game-over para estilização especial
+            if "Xeque-mate" in status_message:
+                status_text = Text(
+                    f"  ♛ {status_message}  ", style="bold green", justify="center"
+                )
+            elif "Empate" in status_message:
+                status_text = Text(
+                    f"  ½ {status_message}  ", style="bold yellow", justify="center"
+                )
+            else:
+                status_text = Text(
+                    f"  ⚠ {status_message}  ", style="bold red", justify="center"
+                )
+        elif game.board.is_check(game.player_turn):
+            turn_name = "Brancas" if game.player_turn == Color.WHITE else "Pretas"
             status_text = Text(
-                f"  {status_message}  ", style="bold red", justify="center"
-            )
-        else:
-            status_text = Text(
-                "  Notação: e4, Cf3, Nf3, e2-e4  |  'sair' para encerrar  ",
-                style="dim",
+                f"  ♚ XEQUE! {turn_name} em xeque! Encontre um movimento para sair.  ",
+                style="bold red",
                 justify="center",
             )
+        else:
+            status_text = Text("  ", style="dim")
 
         # Command line
         cmd_line = self._build_command_line(game)
@@ -421,7 +519,7 @@ class RichView(Renderer):
 
         # Linha vazia como margem entre tabuleiro e painéis
         gap = Text("")
-        return Group(title, centered_board, gap, info_row, bottom_section)
+        return Group(title, main_row, gap, info_row, bottom_section)
 
     def render(
         self,
