@@ -186,7 +186,8 @@ class TestPieceNotation:
 		result = parse_move_notation("Nxe5", game)
 		assert result is not None
 		origin, end, suffix = result
-		assert end == Position(4, 4)  # e5
+		# e5: col=e=4, rank=5 → row=8-5=3 → Position(3, 4)
+		assert end == Position(3, 4)
 
 
 class TestCastlingNotation:
@@ -231,7 +232,7 @@ class TestPromotionNotation:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 4), Pawn(Color.WHITE))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		result = parse_move_notation("e8=Q", game)
@@ -245,7 +246,7 @@ class TestPromotionNotation:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 4), Pawn(Color.WHITE))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		result = parse_move_notation("e8=R", game)
@@ -256,7 +257,7 @@ class TestPromotionNotation:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 4), Pawn(Color.WHITE))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		result = parse_move_notation("e8=B", game)
@@ -267,7 +268,7 @@ class TestPromotionNotation:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 4), Pawn(Color.WHITE))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		result = parse_move_notation("e8=N", game)
@@ -278,7 +279,7 @@ class TestPromotionNotation:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 3), Pawn(Color.WHITE))  # d7
 		board.place(Position(0, 4), Pawn(Color.BLACK))  # e8
 		game = Game(board, [Color.WHITE, Color.BLACK])

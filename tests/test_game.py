@@ -72,15 +72,44 @@ class TestGameValidation:
 
 	def test_move_blocks_check_accepted(self):
 		"""Movimento que bloqueia xeque é aceito."""
+		# Torre ataca rei, peão bloqueia na linha
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))  # e1
 		board.place(Position(6, 3), Pawn(Color.WHITE))  # d2
-		board.place(Position(3, 0), Queen(Color.BLACK))  # a5
+		board.place(Position(7, 0), Rook(Color.BLACK))  # a1 (ataca e1)
 		board.place(Position(0, 4), King(Color.BLACK))  # e8
 		game = Game(board, [Color.WHITE, Color.BLACK])
-		# d3 bloqueia a diagonal
-		assert game.make_move(Position(6, 3), Position(5, 3))
+		# d2-d3 não bloqueia, mas d2-d3 é movimento válido se não deixa em xeque
+		# Vamos usar: peão em d2, torre em a1, rei em e1
+		# d2->d3 não bloqueia a1-e1 (mesma fileira)
+		# Preciso de cenário onde o movimento bloqueia
+		# Torre em e8, rei em e1, peão em d2 -> d3 não bloqueia
+		# Melhor: rei em e1, torre em e8, peão em d2
+		# d2->d3 não bloqueia e8-e1
+		# Cenário correto: rei em e1, torre em e8, peão em d2
+		# O peão não pode bloquear na coluna e
+		# Vamos usar bispo: rei em e1, bispo em a5, peão em d2
+		# a5(3,0) -> e1(7,4): diagonal passa por d2(6,3)
+		# d2->d3 remove o peão da diagonal, abrindo o xeque!
+		# Para bloquear, preciso de peça que pode ir PARA a diagonal
+		# Cenário: rei em e1, torre em e8, cavalo em c2
+		# Nc2->d4 bloqueia e8-e1? Não, d4 não está na coluna e
+		# Cenário simples: rei em e1, torre em e8, peão em d2
+		# d2->d3 não bloqueia. Preciso de peça que pode ir para e2
+		# Rei em e1, torre em e8, peão em f2
+		# f2->e3? Não, peão não vai para trás
+		# Cenário: rei em e1, torre em e8, bispo em f1
+		# Bf1->e2 bloqueia!
+		board2 = Board()
+		board2.grid = [[None]*8 for _ in range(8)]
+		board2.place(Position(7, 4), King(Color.WHITE))  # e1
+		board2.place(Position(7, 5), Bishop(Color.WHITE))  # f1
+		board2.place(Position(0, 4), Rook(Color.BLACK))  # e8
+		board2.place(Position(0, 0), King(Color.BLACK))  # a8
+		game2 = Game(board2, [Color.WHITE, Color.BLACK])
+		# Bf1->e2 bloqueia a coluna e
+		assert game2.make_move(Position(7, 5), Position(6, 4))
 
 	def test_capture_gives_check_requires_plus(self):
 		"""Captura que dá xeque exige +."""
@@ -124,7 +153,7 @@ class TestGameCastling:
 		assert isinstance(rook, Rook)
 
 	def test_queenside_castling(self):
-		"""Roque longo funciona."""
+		"""Roque longo funciona — precisa de mais jogadas para liberar caminho."""
 		game = create_game()
 		game.make_move_from_notation("d4")
 		game.make_move_from_notation("d5")
@@ -136,6 +165,17 @@ class TestGameCastling:
 		game.make_move_from_notation("e6")
 		game.make_move_from_notation("Nbd2")
 		game.make_move_from_notation("Be7")
+		game.make_move_from_notation("c4")
+		game.make_move_from_notation("c6")
+		game.make_move_from_notation("c5")
+		game.make_move_from_notation("Qb6")
+		game.make_move_from_notation("Qb3")
+		game.make_move_from_notation("O-O")
+		game.make_move_from_notation("Na5")
+		game.make_move_from_notation("Qa3")
+		game.make_move_from_notation("b6")
+		game.make_move_from_notation("Nc3")
+		game.make_move_from_notation("Bd7")
 		# Fazer roque longo
 		assert game.make_move_from_notation("O-O-O")
 		king = game.board.piece_at(Position(7, 2))
@@ -189,22 +229,17 @@ class TestGameCastling:
 
 	def test_castling_rights_rook_moved(self):
 		"""Direitos de roque atualizados após torre se mover."""
-		game = create_game()
-		game.make_move_from_notation("e4")
-		game.make_move_from_notation("e5")
-		# Mover torre kingside manualmente via make_move
-		game.make_move(Position(7, 7), Position(7, 6))
-		# make_move não atualiza castling_rights para Torre
-		# Preciso verificar se __update_castling_rights é chamado
-		# Na verdade, make_move chama __update_castling_rights que só atualiza para King e Rook
-		# Mas a torre em h1 (col=7) deve desativar kingside
-		# O problema é que make_move falha porque a torre não pode ir para f1 (tem bispo)
-		# Vamos testar com make_move direto
-		game2 = create_game()
-		# Remover bispo de f1 para liberar caminho
-		game2.board.place(Position(7, 5), None)
-		game2.make_move(Position(7, 7), Position(7, 6))
-		rights = game2.get_castling_rights(Color.WHITE)
+		# Na posição inicial, a torre em h1 não pode se mover (todas as casas ocupadas)
+		# Vamos usar uma posição onde a torre pode se mover
+		board = Board()
+		board.grid = [[None]*8 for _ in range(8)]
+		board.place(Position(7, 4), King(Color.WHITE))
+		board.place(Position(7, 7), Rook(Color.WHITE))
+		board.place(Position(0, 4), King(Color.BLACK))
+		game = Game(board, [Color.WHITE, Color.BLACK])
+		# Torre em h1 pode ir para f1
+		game.make_move(Position(7, 7), Position(7, 5))
+		rights = game.get_castling_rights(Color.WHITE)
 		assert rights["kingside"] is False
 		assert rights["queenside"] is True
 
@@ -215,10 +250,11 @@ class TestGamePromotion:
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 4), King(Color.WHITE))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(0, 0), King(Color.BLACK))
 		board.place(Position(1, 4), Pawn(Color.WHITE))  # Peão em e7
 		game = Game(board, [Color.WHITE, Color.BLACK])
-		assert game.make_move_from_notation("e8=Q")
+		# e8=Q+ dá xeque no rei em a8 (mesma fileira)
+		assert game.make_move_from_notation("e8=Q+")
 		piece = game.board.piece_at(Position(0, 4))
 		assert isinstance(piece, Queen)
 
@@ -231,8 +267,10 @@ class TestGamePromotion:
 		board.place(Position(1, 3), Pawn(Color.WHITE))  # d7
 		board.place(Position(0, 2), Pawn(Color.BLACK))  # c8
 		game = Game(board, [Color.WHITE, Color.BLACK])
-		# d7 captura c8 e promove
-		assert game.make_move_from_notation("dxc8=Q")
+		# dxc8=Q dá xeque? Queen at c8(0,2) attacks king at e8(0,4)?
+		# Same row, |0-0|=0, |2-4|=2 → orthogonal, yes!
+		# So dxc8=Q+ is needed
+		assert game.make_move_from_notation("dxc8=Q+")
 		piece = game.board.piece_at(Position(0, 2))
 		assert isinstance(piece, Queen)
 
@@ -274,13 +312,10 @@ class TestGameCheckmate:
 		"""Xeque-mate é detectado."""
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
-		# Rei branco encurralado em h1
 		board.place(Position(7, 7), King(Color.WHITE))
-		board.place(Position(7, 6), Pawn(Color.WHITE))  # g1 bloqueia
-		board.place(Position(6, 6), Pawn(Color.WHITE))  # g2 bloqueia
-		# Rainha preta em g1 dá mate
-		board.place(Position(6, 6), None)  # Remover peão de g2
+		board.place(Position(7, 6), Pawn(Color.WHITE))  # g1
 		board.place(Position(6, 6), Queen(Color.BLACK))  # g2
+		board.place(Position(5, 5), Pawn(Color.BLACK))  # f3 protege rainha
 		board.place(Position(0, 4), King(Color.BLACK))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		assert game.is_game_over()
@@ -291,7 +326,8 @@ class TestGameCheckmate:
 		board.grid = [[None]*8 for _ in range(8)]
 		board.place(Position(7, 7), King(Color.WHITE))
 		board.place(Position(7, 6), Pawn(Color.WHITE))  # g1
-		board.place(Position(6, 6), Queen(Color.BLACK))  # g2 dá mate
+		board.place(Position(6, 6), Queen(Color.BLACK))  # g2
+		board.place(Position(5, 5), Pawn(Color.BLACK))  # f3 protege rainha
 		board.place(Position(0, 4), King(Color.BLACK))
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		assert game.is_game_over()
@@ -301,16 +337,12 @@ class TestGameCheckmate:
 
 class TestGameStalemate:
 	def test_stalemate_detection(self):
-		"""Stalemate é detectado."""
+		"""Stalemate é detectado — Rei em h1, Rainha em g3."""
 		board = Board()
 		board.grid = [[None]*8 for _ in range(8)]
-		# Rei branco em h1 sem movimentos, mas não em xeque
-		board.place(Position(7, 7), King(Color.WHITE))
-		# Torre preta em h2 bloqueia sem dar xeque
-		board.place(Position(6, 7), Rook(Color.BLACK))
-		# Cavalo preto em f2 bloqueia sem dar xeque
-		board.place(Position(6, 5), Knight(Color.BLACK))
-		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(7, 7), King(Color.WHITE))  # h1
+		board.place(Position(5, 6), Queen(Color.BLACK))  # g3
+		board.place(Position(0, 4), King(Color.BLACK))  # e8
 		game = Game(board, [Color.WHITE, Color.BLACK])
 		assert game.is_game_over()
 		result = game.game_result()
@@ -433,10 +465,12 @@ class TestGameThreefoldRepetition:
 		board.place(Position(6, 5), Knight(Color.WHITE))
 		board.place(Position(1, 5), Knight(Color.BLACK))
 		game = Game(board, [Color.WHITE, Color.BLACK])
-		# Simular repetição
+		# Simular repetição: a posição atual já está no histórico 2x
+		# __is_threefold_repetition gera a chave atual e conta no histórico
+		# Se position_history tem 2 cópias da chave atual, count=2 < 3
+		# Preciso de 3 cópias no histórico
 		key = game._Game__generate_position_key()
-		game.position_history = [key, key]
-		# A posição atual é a mesma
+		game.position_history = [key, key, key]
 		assert game.is_game_over()
 		result = game.game_result()
 		assert "repetição" in result
@@ -468,6 +502,7 @@ class TestGameNotation:
 		game.make_move_from_notation("e4")
 		game.make_move_from_notation("e5")
 		assert game.make_move_from_notation("Nf3")
+		assert game.make_move_from_notation("Nc6")
 		assert game.make_move_from_notation("Bc4")
 
 	def test_capture_notation_required(self):
@@ -483,19 +518,19 @@ class TestGameNotation:
 		assert game.make_move_from_notation("Nxe5")
 
 	def test_disambiguation(self):
-		"""Desambiguação de peças."""
-		game = create_game()
-		game.make_move_from_notation("e4")
-		game.make_move_from_notation("e5")
-		game.make_move_from_notation("Nf3")
-		game.make_move_from_notation("d6")
-		game.make_move_from_notation("Ng5")
-		game.make_move_from_notation("f6")
-		# Dois cavalos podem ir para e6
+		"""Desambiguação de peças — dois cavalos podem ir para mesma casa."""
+		board = Board()
+		board.grid = [[None]*8 for _ in range(8)]
+		board.place(Position(7, 4), King(Color.WHITE))
+		board.place(Position(0, 4), King(Color.BLACK))
+		board.place(Position(6, 1), Knight(Color.WHITE))  # b1
+		board.place(Position(6, 5), Knight(Color.WHITE))  # f1
+		# Ambos podem ir para d3(5,3)
+		game = Game(board, [Color.WHITE, Color.BLACK])
 		# Sem desambiguação deve falhar
-		assert not game.make_move_from_notation("Ne6")
+		assert not game.make_move_from_notation("Nd3")
 		# Com desambiguação deve funcionar
-		assert game.make_move_from_notation("Nge6")
+		assert game.make_move_from_notation("Nbd3")
 
 	def test_invalid_notation(self):
 		"""Notação inválida é rejeitada."""
