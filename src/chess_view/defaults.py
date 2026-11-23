@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
         "dark_square_color": "#2d4a2d",
         "selected_square_color": "#b8860b",
         "selected_text_color": "black",
-        "valid_move_color": "#2a4a6b",
+        "valid_move_color": "#4a7a9b",
         "valid_capture_color": "#6b2a2a",
         "check_square_color": "#8b0000",
         "white_piece_color": "white",
