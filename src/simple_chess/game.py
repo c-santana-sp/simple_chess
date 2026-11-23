@@ -475,9 +475,12 @@ class Game:
 	def __has_legal_moves(self, color: Color) -> bool:
 		"""Verifica se a cor tem pelo menos um movimento legal.
 
+		Inclui movimentos normais, en passant e roque.
+
 		Returns:
 			True se existe pelo menos um movimento legal.
 		"""
+		# 1. Movimentos normais de todas as peças
 		for row in range(8):
 			for col in range(8):
 				pos = Position(row, col)
@@ -502,10 +505,124 @@ class Game:
 					self.board.grid = original_grid
 
 					if not in_check:
-						# Encontrou movimento legal
 						return True
 
+		# 2. En passant — simular captura ao passar
+		# Se há um peão que avançou 2 casas, verificar se um peão inimigo pode capturá-lo
+		if self.last_double_pawn_move is not None:
+			enemy_pos = self.last_double_pawn_move
+			enemy_piece = self.board.piece_at(enemy_pos)
+			if enemy_piece is not None:
+				from simple_chess.pieces.pawn import Pawn
+				# Buscar peões da cor que podem capturar en passant
+				for row in range(8):
+					for col in range(8):
+						pos = Position(row, col)
+						piece = self.board.piece_at(pos)
+						if piece is None or piece.color != color:
+							continue
+						if not isinstance(piece, Pawn):
+							continue
+						moves = piece.valid_moves(pos, self.board)
+						if moves is None:
+							continue
+						for move in moves:
+							# Verificar se este movimento é en passant
+							if self.__is_en_passant(piece, pos, move):
+								# Simular en passant: mover peão e remover peão capturado
+								original_grid = self.board.grid
+								self.board.grid = [r[:] for r in original_grid]
+								# Remover o peão capturado
+								captured_pawn_pos = Position(
+									move.row + 1 if piece.color == Color.WHITE else move.row - 1,
+									move.col
+								)
+								self.board.place(captured_pawn_pos, None)
+								self.board.place(pos, None)
+								self.board.place(move, piece)
+								in_check = self.board.is_check(color)
+								self.board.grid = original_grid
+								if not in_check:
+									return True
+
+		# 3. Roque — verificar se a cor pode fazer roque
+		if self.__can_castling(color, kingside=True):
+			return True
+		if self.__can_castling(color, kingside=False):
+			return True
+
 		return False
+
+	def __can_castling(self, color: Color, kingside: bool) -> bool:
+		"""Verifica se a cor pode executar roque (sem executá-lo).
+
+		Usado por __has_legal_moves para não dar falso positivo de mate/stalemate.
+		"""
+		from simple_chess.pieces.king import King
+		from simple_chess.pieces.rook import Rook
+
+		# Verificar direitos de roque
+		rights = self.castling_rights[color]
+		if kingside:
+			if not rights["kingside"]:
+				return False
+		else:
+			if not rights["queenside"]:
+				return False
+
+		# Posições do rei e da torre
+		if color == Color.WHITE:
+			king_row = 7
+		else:
+			king_row = 0
+
+		king_origin = Position(king_row, 4)
+		if kingside:
+			king_end = Position(king_row, 6)
+			rook_origin = Position(king_row, 7)
+			rook_end = Position(king_row, 5)
+			passed_squares = [Position(king_row, 5)]
+			path_squares = [Position(king_row, 5), Position(king_row, 6)]
+		else:
+			king_end = Position(king_row, 2)
+			rook_origin = Position(king_row, 0)
+			rook_end = Position(king_row, 3)
+			passed_squares = [Position(king_row, 3), Position(king_row, 2)]
+			path_squares = [Position(king_row, 1), Position(king_row, 2), Position(king_row, 3)]
+
+		# Verificar que o rei está na posição inicial
+		king_piece = self.board.piece_at(king_origin)
+		if king_piece is None or not isinstance(king_piece, King):
+			return False
+
+		# Verificar que a torre está na posição inicial
+		rook_piece = self.board.piece_at(rook_origin)
+		if rook_piece is None or not isinstance(rook_piece, Rook):
+			return False
+
+		# Verificar que o caminho está livre
+		for pos in path_squares:
+			if self.board.piece_at(pos) is not None:
+				return False
+
+		# Verificar que o rei não está em xeque
+		if self.board.is_check(color):
+			return False
+
+		# Verificar que o rei não passa por xeque
+		original_grid = self.board.grid
+		self.board.grid = [row[:] for row in original_grid]
+		self.board.place(king_origin, None)
+
+		for pos in passed_squares:
+			self.board.place(pos, king_piece)
+			if self.board.is_check(color):
+				self.board.grid = original_grid
+				return False
+			self.board.place(pos, None)
+
+		self.board.grid = original_grid
+		return True
 
 	def is_game_over(self) -> bool:
 		"""Verifica se o jogo terminou (xeque-mate ou stalemate).
