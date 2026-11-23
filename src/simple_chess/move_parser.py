@@ -21,7 +21,6 @@ import re
 from typing import TYPE_CHECKING
 
 from simple_chess.color import Color
-from simple_chess.pieces.piece import Piece
 from simple_chess.position import Position
 
 if TYPE_CHECKING:
@@ -31,11 +30,16 @@ if TYPE_CHECKING:
 
 # Mapeamento de letras de peça (padrão internacional PGN)
 PIECE_LETTER_MAP: dict[str, str] = {
-    "K": "King", "k": "King",
-    "Q": "Queen", "q": "Queen",
-    "R": "Rook", "r": "Rook",
-    "B": "Bishop", "b": "Bishop",
-    "N": "Knight", "n": "Knight",
+    "K": "King",
+    "k": "King",
+    "Q": "Queen",
+    "q": "Queen",
+    "R": "Rook",
+    "r": "Rook",
+    "B": "Bishop",
+    "b": "Bishop",
+    "N": "Knight",
+    "n": "Knight",
 }
 
 
@@ -125,6 +129,7 @@ def _find_moving_piece(
             else:
                 # Notação de peão — só aceitar peões
                 from simple_chess.pieces.pawn import Pawn
+
                 if not isinstance(piece, Pawn):
                     continue
 
@@ -203,7 +208,7 @@ def parse_move_notation(
         suffix = "#"
     elif notation.endswith("+"):
         suffix = "+"
-    clean = notation[:len(notation) - len(suffix)] if suffix else notation
+    clean = notation[: len(notation) - len(suffix)] if suffix else notation
     clean = clean.strip()
     if not clean:
         return None
@@ -237,6 +242,7 @@ def parse_move_notation(
             if piece.color != color:
                 continue
             from simple_chess.pieces.pawn import Pawn
+
             if not isinstance(piece, Pawn):
                 continue
             moves = piece.valid_moves(pos, board)
@@ -273,6 +279,7 @@ def parse_move_notation(
             if piece.color != color:
                 continue
             from simple_chess.pieces.pawn import Pawn
+
             if not isinstance(piece, Pawn):
                 continue
             moves = piece.valid_moves(pos, board)
@@ -316,9 +323,7 @@ def parse_move_notation(
 
     # Notação curta de peça com desambiguação: "Nf3", "Ndf3", "N1f3", "N1df3"
     # Só aceita se NÃO é captura (captura exige "Nxf3")
-    piece_short_match = re.match(
-        r"^([KQRBNkqrnb])([a-h]?[1-8]?)([a-h][1-8])$", clean
-    )
+    piece_short_match = re.match(r"^([KQRBNkqrnb])([a-h]?[1-8]?)([a-h][1-8])$", clean)
     if piece_short_match:
         piece_letter = piece_short_match.group(1)
         disambig = piece_short_match.group(2)
@@ -390,7 +395,6 @@ def _parse_castling(
         Tuple (origem do rei, destino do rei) ou None.
     """
     # Encontrar o rei
-    from simple_chess.pieces.king import King
     king_pos = board.find_king(color)
     if king_pos is None:
         return None

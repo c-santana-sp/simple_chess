@@ -2,7 +2,6 @@
 
 from simple_chess.color import Color
 
-
 # Configurações padrão — fallback se config.json não existir
 DEFAULT_CONFIG = {
     "invert_board_on_black_turn": True,

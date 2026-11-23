@@ -3,13 +3,23 @@
 import json
 import pathlib
 
+# Imports do Rich usados em type hints — importados no topo para evitar F821
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from chess_view.defaults import (
+    DEFAULT_CONFIG,
+    _build_piece_symbols,
+    _deep_copy,
+    _deep_merge,
+)
+from chess_view.renderer import Renderer
 from simple_chess.color import Color
 from simple_chess.game import Game
 from simple_chess.pieces.piece import Piece
 from simple_chess.position import Position
-
-from chess_view.defaults import DEFAULT_CONFIG, _build_piece_symbols, _deep_copy, _deep_merge
-from chess_view.renderer import Renderer
 
 # Caminho do arquivo de configuração, relativo ao projeto root
 _CONFIG_PATH = pathlib.Path(__file__).resolve().parents[2] / "config.json"
@@ -183,9 +193,6 @@ class RichView(Renderer):
         Cada célula ocupa `cell_height` linhas, com a peça centralizada
         verticalmente, para que as casas fiquem mais quadradas.
         """
-        from rich.table import Table
-        from rich.text import Text as RichText
-
         cell_w = self.cell_width
         cell_h = self.cell_height
         valid_set = set(valid_moves) if valid_moves else set()
@@ -214,13 +221,12 @@ class RichView(Renderer):
         bold_prefix = "bold " if self.piece_bold else ""
 
         # Encontrar a posição do rei do jogador atual para destacar xeque
-        from simple_chess.pieces.king import King
         king_in_check_pos = None
         if game.board.is_check(game.player_turn):
             king_in_check_pos = game.board.find_king(game.player_turn)
 
         for row in row_order:
-            cells: list[RichText] = []
+            cells: list[Text] = []
             for col in col_order:
                 pos = Position(row, col)
                 piece = game.board.piece_at(pos)
@@ -234,11 +240,19 @@ class RichView(Renderer):
                 has_piece = symbol.strip()
 
                 # Cor da peça depende da cor (branca ou preta)
-                piece_fg = white_piece_color if piece and piece.color == Color.WHITE else black_piece_color
+                piece_fg = (
+                    white_piece_color
+                    if piece and piece.color == Color.WHITE
+                    else black_piece_color
+                )
 
                 # Determinar estilo e texto da célula
                 if is_selected:
-                    piece_line = f" {selected_marker}{symbol} " if has_piece else f" {selected_marker}  "
+                    piece_line = (
+                        f" {selected_marker}{symbol} "
+                        if has_piece
+                        else f" {selected_marker}  "
+                    )
                     style = f"{bold_prefix}{selected_fg} on {selected_bg}"
                 elif is_check_square:
                     # Rei em xeque — destaque vermelho
@@ -264,7 +278,7 @@ class RichView(Renderer):
                     lines_above = (cell_h - 1) // 2
                     lines_below = cell_h - 1 - lines_above
 
-                    full_text = RichText(style=style)
+                    full_text = Text(style=style)
                     for _ in range(lines_above):
                         full_text.append(empty_line)
                         full_text.append("\n")
@@ -274,7 +288,7 @@ class RichView(Renderer):
                         full_text.append(empty_line)
                     cells.append(full_text)
                 else:
-                    cells.append(RichText(piece_line, style=style))
+                    cells.append(Text(piece_line, style=style))
 
             row_label = 8 - row
             table.add_row(f"[bold]  {row_label} [/]", *cells)
@@ -295,15 +309,13 @@ class RichView(Renderer):
         Quando há peças, exibe os símbolos separados por espaço.
 
         Returns:
-            RichText com as peças capturadas formatadas horizontalmente.
+            Text com as peças capturadas formatadas horizontalmente.
         """
-        from rich.text import Text as RichText
-
         if game.captured_pieces:
             symbols = " ".join(self._piece_symbol(p) for p in game.captured_pieces)
-            content = RichText(symbols, style="white")
+            content = Text(symbols, style="white")
         else:
-            content = RichText("(nenhuma)", style="dim")
+            content = Text("(nenhuma)", style="dim")
 
         return content
 
@@ -313,11 +325,8 @@ class RichView(Renderer):
         Returns:
             Panel com as peças capturadas em formato horizontal.
         """
-        from rich.panel import Panel
-        from rich.text import Text as RichText
-
         captured_text = self._build_captured_text(game)
-        title = RichText("Capturadas", style=f"bold {self.captured_title_color}")
+        title = Text("Capturadas", style=f"bold {self.captured_title_color}")
         return Panel(
             captured_text,
             title=title,
@@ -335,12 +344,9 @@ class RichView(Renderer):
         Returns:
             Panel com as jogadas em fluxo horizontal.
         """
-        from rich.panel import Panel
-        from rich.text import Text as RichText
-
         moves = game.move_history
         if not moves:
-            history_text = RichText("(sem jogadas)", style="dim")
+            history_text = Text("(sem jogadas)", style="dim")
         else:
             # Construir tokens: "1.e4", "e5", "2.d4", "d5", ...
             tokens: list[str] = []
@@ -361,7 +367,7 @@ class RichView(Renderer):
             if len(tokens) > max_tokens:
                 tokens = tokens[-max_tokens:]
 
-            history_text = RichText()
+            history_text = Text()
             if len(tokens) > max_tokens:
                 history_text.append("... ", style="dim")
             for idx, token in enumerate(tokens):
@@ -369,7 +375,7 @@ class RichView(Renderer):
                     history_text.append(" ")
                 history_text.append(token, style="dim white")
 
-        history_title = RichText("Histórico", style="bold blue")
+        history_title = Text("Histórico", style="bold blue")
         return Panel(
             history_text,
             title=history_title,
@@ -380,8 +386,6 @@ class RichView(Renderer):
 
     def _build_command_line(self, game: Game) -> "Text":
         """Constrói a linha de comando estilo vim."""
-        from rich.text import Text
-
         turn_color = game.player_turn
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
 
@@ -394,16 +398,14 @@ class RichView(Renderer):
             # Cursor piscante (simulado)
             cmd.append(self.cursor_char, style=f"bold {self.input_color} blink")
         else:
-            cmd.append(f"{turn_text}, digite sua jogada:", style=f"bold {self.prompt_color}")
+            cmd.append(
+                f"{turn_text}, digite sua jogada:", style=f"bold {self.prompt_color}"
+            )
 
         return cmd
 
     def _build_reference_panel(self) -> "Panel":
         """Constrói o painel de referência de notação PGN — vertical, na lateral direita."""
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
         # Tabela de referência com duas colunas: notação e descrição
         ref_table = Table(show_header=False, box=None, padding=(0, 0))
         ref_table.add_column("Not", style="bold cyan", width=6)
@@ -448,10 +450,6 @@ class RichView(Renderer):
 
     def _build_help_panel(self) -> "Panel":
         """Constrói o painel de ajuda com colunas para otimizar espaço vertical."""
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
         # Tabela com 4 colunas usando ratio para distribuição proporcional
         help_table = Table(show_header=False, box=None, padding=(0, 1))
         help_table.add_column("Sec1", style="bold cyan", ratio=1)
@@ -472,9 +470,15 @@ class RichView(Renderer):
         # Linha 2: Notação + Regras
         help_table.add_row("Notação", "", "Regras", "")
         help_table.add_row("  {destino}", "Movimento simples", "  Xeque", "Rei atacado")
-        help_table.add_row("  {o}x{d}", "Captura (x obrig.)", "  Mate", "Xeque sem saída")
-        help_table.add_row("  {destino}+", "Xeque (+ obrig.)", "  Stalemate", "Sem movimentos")
-        help_table.add_row("  {destino}#", "Xeque-mate (# obrig.)", "  50 moves", "Sem captura/peão")
+        help_table.add_row(
+            "  {o}x{d}", "Captura (x obrig.)", "  Mate", "Xeque sem saída"
+        )
+        help_table.add_row(
+            "  {destino}+", "Xeque (+ obrig.)", "  Stalemate", "Sem movimentos"
+        )
+        help_table.add_row(
+            "  {destino}#", "Xeque-mate (# obrig.)", "  50 moves", "Sem captura/peão"
+        )
         help_table.add_row("  {L}{c}{d}", "Desambiguação", "  3x repet.", "Posição 3x")
         help_table.add_row("", "", "", "")
 
@@ -482,10 +486,14 @@ class RichView(Renderer):
         help_table.add_row("Especiais", "", "Destaque", "")
         help_table.add_row("  O-O", "Roque curto", "  ★", "Peça selecionada")
         help_table.add_row("  O-O-O", "Roque longo", "  · (azul)", "Movimento válido")
-        help_table.add_row("  {d}={p}", "Promoção (ex: e8=Q)", "  · (verm.)", "Captura possível")
+        help_table.add_row(
+            "  {d}={p}", "Promoção (ex: e8=Q)", "  · (verm.)", "Captura possível"
+        )
         help_table.add_row("  {o}x{d}", "En passant", "  !", "Rei em xeque")
 
-        title_text = Text("  ♔ AJUDA — Como Jogar  ", style="bold yellow", justify="center")
+        title_text = Text(
+            "  ♔ AJUDA — Como Jogar  ", style="bold yellow", justify="center"
+        )
         return Panel(
             help_table,
             title=title_text,
@@ -501,21 +509,24 @@ class RichView(Renderer):
         valid_moves: list[Position] | None = None,
         status_message: str = "",
     ) -> "Group":
-        from rich.console import Group
-        from rich.panel import Panel
-        from rich.table import Table
-        from rich.text import Text
-
         # Se no modo help, mostrar o painel de ajuda
         if self._help_mode:
             help_panel = self._build_help_panel()
-            cmd_line = Text("  Pressione 'q' para voltar ao jogo  ", style="bold green", justify="center")
+            cmd_line = Text(
+                "  Pressione 'q' para voltar ao jogo  ",
+                style="bold green",
+                justify="center",
+            )
             return Group(help_panel, cmd_line)
 
         # Turno info
         turn_color = game.player_turn
         turn_text = "Brancas" if turn_color == Color.WHITE else "Pretas"
-        title = Text(f"  {self.title_text}  |  Vez das: {turn_text}", style=self.title_style, justify="center")
+        title = Text(
+            f"  {self.title_text}  |  Vez das: {turn_text}",
+            style=self.title_style,
+            justify="center",
+        )
 
         # --- Coluna 1: tabuleiro + linha de comando (esquerda) ---
         board_table = self._build_table(game, selected, valid_moves)
@@ -586,7 +597,7 @@ class RichView(Renderer):
 
     def get_renderable(self, game: Game):
         """Retorna o renderable atualizado para o Live display.
-        
+
         Protegido contra exceções durante a renderização para não crashar o jogo.
         """
         try:
@@ -596,10 +607,11 @@ class RichView(Renderer):
                 self._valid_moves,
                 self._status_message,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
             # Fallback: retornar um texto simples se a renderização falhar
-            from rich.text import Text
-            return Text("Erro de renderização. Redimensione o terminal.", style="bold red")
+            return Text(
+                "Erro de renderização. Redimensione o terminal.", style="bold red"
+            )
 
     def handle_key(self, key: str) -> tuple[str, bool]:
         """Processa uma tecla digitada e atualiza o input buffer.

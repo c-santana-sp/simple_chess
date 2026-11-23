@@ -29,13 +29,11 @@ import sys
 import termios
 import time
 
+from chess_view.rich_view import RichView
 from simple_chess.board import Board
 from simple_chess.color import Color
 from simple_chess.game import Game
 from simple_chess.position import Position
-
-from chess_view.rich_view import RichView
-
 
 # Flag global para detectar quando o terminal volta do background
 _terminal_resumed = True
@@ -55,7 +53,7 @@ def _sigwinch_handler(signum: int, frame) -> None:
 
     O rich.Live precisa ser notificado para ajustar o layout.
     """
-    pass  # O rich.Live já trata redimensionamento internamente
+    # O rich.Live já trata redimensionamento internamente
 
 
 def parse_algebraic(notation: str) -> Position | None:
@@ -114,7 +112,7 @@ def _restore_terminal(fd: int, old_settings: list) -> None:
     try:
         flags = fcntl.fcntl(fd, fcntl.F_GETFL)
         fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-    except (OSError, IOError):
+    except OSError:
         pass  # FD já fechado
 
 
@@ -146,7 +144,7 @@ def _read_key_nonblocking(fd: int) -> str | None:
             data = os.read(fd, 64).decode("utf-8", errors="replace")
             if data:
                 return data
-    except (OSError, ValueError, UnicodeDecodeError, select.error):
+    except (OSError, ValueError, UnicodeDecodeError):
         # select.error pode ocorrer quando o terminal perde foco
         # ou entra em estado inconsistente
         pass
@@ -159,8 +157,8 @@ def main() -> None:
     Usa rich.Live para display fixo e termios + select para input
     caractere por caractere, exibindo o texto digitado na tela.
     """
-    from rich.live import Live
     from rich.console import Console
+    from rich.live import Live
 
     game = create_game()
     view = RichView()
@@ -240,20 +238,30 @@ def main() -> None:
                         origin = parse_algebraic(house)
                         if origin is None:
                             view.render(
-                                game, None, None,
+                                game,
+                                None,
+                                None,
                                 f"'{house}' não é uma posição válida. Use '?e2'.",
                             )
                             break
 
                         piece = game.board.piece_at(origin)
                         if piece is None:
-                            view.render(game, origin, None, "Não há peça nesta posição.")
+                            view.render(
+                                game, origin, None, "Não há peça nesta posição."
+                            )
                             break
 
                         if piece.color != game.player_turn:
-                            turn_name = "Brancas" if game.player_turn == Color.WHITE else "Pretas"
+                            turn_name = (
+                                "Brancas"
+                                if game.player_turn == Color.WHITE
+                                else "Pretas"
+                            )
                             view.render(
-                                game, origin, None,
+                                game,
+                                origin,
+                                None,
                                 f"Peça não é sua. Vez das {turn_name}.",
                             )
                             break
@@ -286,7 +294,9 @@ def main() -> None:
                         # Movimento rejeitado — dar feedback inteligente
                         if game.board.is_check(game.player_turn):
                             view.render(
-                                game, None, None,
+                                game,
+                                None,
+                                None,
                                 "Rei em xeque! Saia do xeque. Use '+' no final: Qxf7+",
                             )
                         else:
@@ -297,7 +307,9 @@ def main() -> None:
 
                     # Input com mais de 1 parte (sem o "?")
                     view.render(
-                        game, None, None,
+                        game,
+                        None,
+                        None,
                         "Uso: 'e4', 'Nf3', 'exd5', 'O-O', '?e2', 'help'.",
                     )
                     break
@@ -308,7 +320,7 @@ def main() -> None:
             # Atualizar display a cada iteracao
             try:
                 live.update(view.get_renderable(game))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 # Ignorar erros de renderização (ex: terminal redimensionado,
                 # suspenso, ou em estado inconsistente) para não crashar o jogo
                 pass
@@ -329,7 +341,7 @@ def main() -> None:
 
         try:
             live.stop()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass  # Live pode já estar parado
         try:
             _restore_terminal(fd, old_settings)
@@ -350,9 +362,13 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
     - Desambiguação necessária
     - Notação inválida
     """
-    from simple_chess.move_parser import parse_move_notation, _find_moving_piece, PIECE_LETTER_MAP, parse_position
-    from simple_chess.position import Position
     from simple_chess.color import Color
+    from simple_chess.move_parser import (
+        PIECE_LETTER_MAP,
+        parse_move_notation,
+        parse_position,
+    )
+    from simple_chess.position import Position
 
     notation_lower = notation.lower()
 
@@ -364,6 +380,7 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
         # Verificar se é notação de peça sem desambiguação
         # Ex: "Nf3" quando dois cavalos podem ir para f3
         import re
+
         piece_match = re.match(r"^([kqrnb])([a-h][1-8])$", notation_lower)
         if piece_match:
             piece_letter = piece_match.group(1)
@@ -390,12 +407,18 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
                         cols = [chr(ord("a") + c.col) for c in candidates]
                         if len(set(cols)) == len(cols):
                             # Colunas diferentes — usar coluna
-                            hints = [f"{piece_letter.upper()}{cols[i]}{target_str}" for i in range(len(candidates))]
+                            hints = [
+                                f"{piece_letter.upper()}{cols[i]}{target_str}"
+                                for i in range(len(candidates))
+                            ]
                             return f"Desambiguação! Use: {', '.join(hints)}"
                         else:
                             # Mesma coluna — usar fileira
                             ranks = [str(8 - c.row) for c in candidates]
-                            hints = [f"{piece_letter.upper()}{ranks[i]}{target_str}" for i in range(len(candidates))]
+                            hints = [
+                                f"{piece_letter.upper()}{ranks[i]}{target_str}"
+                                for i in range(len(candidates))
+                            ]
                             return f"Desambiguação! Use: {', '.join(hints)}"
 
                 # Verificar se é captura sem 'x'
@@ -427,11 +450,17 @@ def _get_helpful_error(notation: str, game: "Game") -> str:
                     if len(candidates) > 1:
                         cols = [chr(ord("a") + c.col) for c in candidates]
                         if len(set(cols)) == len(cols):
-                            hints = [f"{piece_letter.upper()}{cols[i]}x{target_str}" for i in range(len(candidates))]
+                            hints = [
+                                f"{piece_letter.upper()}{cols[i]}x{target_str}"
+                                for i in range(len(candidates))
+                            ]
                             return f"Desambiguação! Use: {', '.join(hints)}"
                         else:
                             ranks = [str(8 - c.row) for c in candidates]
-                            hints = [f"{piece_letter.upper()}{ranks[i]}x{target_str}" for i in range(len(candidates))]
+                            hints = [
+                                f"{piece_letter.upper()}{ranks[i]}x{target_str}"
+                                for i in range(len(candidates))
+                            ]
                             return f"Desambiguação! Use: {', '.join(hints)}"
 
         # Verificar se é notação de peão
