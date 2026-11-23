@@ -15,7 +15,9 @@ DEFAULT_CONFIG = {
         "selected_text_color": "black",
         "valid_move_color": "#2a4a6b",
         "valid_capture_color": "#6b2a2a",
-        "piece_text_color": "white",
+        "check_square_color": "#8b0000",
+        "white_piece_color": "white",
+        "black_piece_color": "#777777",
         "piece_bold": True,
     },
     "markers": {
