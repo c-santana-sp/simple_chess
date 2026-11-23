@@ -110,18 +110,34 @@ O jogo abre diretamente no terminal, com o tabuleiro visível e aguardando seu p
 
 ## Jogabilidade
 
-### Formatos de notação
+### Notação algébrica padrão internacional (PGN)
+
+O jogo usa exclusivamente a notação oficial usada em torneios de xadrez. As letras das peças são em inglês:
+
+| Peça | Letra | Exemplo |
+|---|---|---|
+| King (Rei) | `K` | `Ke2` |
+| Queen (Rainha) | `Q` | `Qh5` |
+| Rook (Torre) | `R` | `Rh1` |
+| Bishop (Bispo) | `B` | `Bc4` |
+| Knight (Cavalo) | `N` | `Nf3` |
+| Peão | (sem letra) | `e4` |
 
 | Formato | Exemplo | Descrição |
 |---|---|---|
-| **Notação curta** | `e4`, `d5`, `c4` | Peão avança para a casa indicada |
-| **Notação de peças** | `Cf3`, `Bc4`, `Qh5` | Peça + destino (C=N=Cavalo, B=Bispo, Q/D=Rainha, R/T=Torre, K=Rei) |
-| **Capturas** | `exd5`, `Cxf3` | Origem + `x` + destino |
-| **Notação longa** | `e2-e4`, `g1-f3` | Origem + hífen + destino |
-| **Notação completa** | `e2e4` | Origem + destino sem separador |
-| **Selecionar peça** | `e2` | Destaca as jogadas válidas no tabuleiro |
+| **Movimento de peão** | `e4`, `d5`, `c4` | Peão avança para a casa indicada |
+| **Movimento de peça** | `Nf3`, `Bc4`, `Qh5` | Letra da peça + destino |
+| **Captura** | `exd5`, `Nxf3` | Origem + `x` + destino (**obrigatório**) |
+| **Xeque** | `Qxf7+`, `e4+` | Movimento que dá xeque (**sufixo obrigatório**) |
+| **Xeque-mate** | `Qxf7#` | Movimento que dá xeque-mate (**sufixo obrigatório**) |
+| **Roque curto** | `O-O` | Rei para o lado da torre kingside |
+| **Roque longo** | `O-O-O` | Rei para o lado da torre queenside |
+| **Promoção** | `e8=Q` | Peão promove para Rainha |
+| **Ver jogadas** | `?e2` | Destaca as jogadas válidas da peça em e2 |
 
-> **Dica de aprendizado:** Jogar com notação algébrica é uma ótima forma de se familiarizar com a linguagem universal do xadrez. À medida que você joga, começa a ler e pensar em termos de `e4`, `Cf3`, `Bc4` — exatamente como partidas reais são anotadas e discutidas.
+> **Importante:** O jogo exige a notação PGN completa. Para capturar, use `exd5` (não `e4`). Para xeque, use `e4+`. Para xeque-mate, use `e4#`. Um painel de referência aparece no rodapé do terminal para consulta rápida.
+
+> **Dica de aprendizado:** Jogar com notação PGN é uma ótima forma de se familiarizar com a linguagem universal do xadrez. À medida que você joga, começa a ler e pensar em termos de `e4`, `Nf3`, `Bc4` — exatamente como partidas reais são anotadas e discutidas.
 
 ### Destaque visual
 
@@ -134,6 +150,7 @@ O jogo abre diretamente no terminal, com o tabuleiro visível e aguardando seu p
 | Comando | Ação |
 |---|---|
 | `sair` / `q` | Encerra o jogo |
+| `?e2` | Visualiza jogadas válidas da peça em e2 (não vai para o histórico) |
 | `Escape` | Limpa o texto digitado |
 | `Backspace` | Apaga o último caractere |
 
@@ -198,4 +215,4 @@ Para adicionar uma nova visualização (ex: Pygame, terminal puro), basta criar 
 
 ---
 
-> **Nota:** Apenas o peão (Pawn) tem lógica de movimento implementada no momento. As outras peças estão como desafio para implementar.
+> **Nota:** Todas as peças básicas têm lógica de movimento implementada (Pawn, Knight, King, Bishop, Rook, Queen). A validação de xeque também funciona — movimentos que deixam o rei em xeque são rejeitados. Movimentos especiais (roque completo, promoção, en passant) e detecção de fim de jogo (xeque-mate, stalemate) estão pendentes.
